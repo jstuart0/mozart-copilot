@@ -310,6 +310,9 @@ at all (see the campaign plan's fence-aware section map, upstream lines
 | `otto` | `read, search, execute` | `kubectl apply --dry-run=server`, `helm template`, `helm search repo --versions` |
 | `percy` | `read, search, execute, web` | measurement-first: `EXPLAIN`, bundle deltas, load probes; `web` for release-note/advisory lookups |
 | `tessa` | `read, search, execute, edit` | runs suites to assess seams; `edit` for her own findings doc and, in TDD mode, the test contract — never source or test files (Copilot's `edit` is coarser than Claude Code's `Write`/`Edit` split; the boundary is now a stated discipline in her body rather than a capability wall — see her persona) |
+| `harry`, `ruby` | `read, search, edit, execute, web` | deep-reviewers (upstream opus tier). Harry writes the plan file directly; ruby implements and verifies UI in a browser — both need the full builder set |
+| `hank`, `scott` | `read, search, edit, execute, web` | builders (upstream sonnet tier). Hank mutates live infrastructure (`kubectl`, `helm`) and edits config in place; scott edits in-repo docs, clones/pushes the GitHub wiki, and calls external wiki APIs |
+| `dick` | `read, search, execute, web` | reviewers tier — investigates read-only. Deliberately **no** `edit`: "You do not have Edit or Write for source code. You cannot fix the thing you found. That's the point" is upstream's own framing, and it holds unchanged under this port's coarser `edit` grant because dick never receives one |
 
 ## The model map
 

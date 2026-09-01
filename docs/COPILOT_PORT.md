@@ -294,13 +294,22 @@ section carved out of the upstream conductor body with no destination file
 at all (see the campaign plan's fence-aware section map, upstream lines
 1111–1126, 4,846 characters).
 
-## Per-agent toolset rationale (partial — Phase 3 extends this table)
+## Per-agent toolset rationale
 
 | agent | tools | why |
 |---|---|---|
 | `jackson` | `read, search, edit, execute, web` | builder — writes code, runs tests/lints/builds, fetches external docs when a task calls for it. Direct translation of the upstream `Read, Grep, Glob, Edit, Write, Bash, WebFetch` set through the primitive mapping |
 | `bob` | `read, search` | read-only architectural review (D4). Upstream's `bob` carries `Edit` for "update the plan file directly with your corrections"; this port narrows that away deliberately — bob's deliverable is findings and a verdict, and harry (or mozart) applies the resulting plan edit. The narrowing is stated in bob's own body, not silently dropped |
 | `sebastian` | `read, search` | D1 — a reviewer of adversarial content (an untrusted diff, third-party package sources) must not be able to act on what it reads. Its one structural gap (reaching `node_modules`/an out-of-tree venv) is closed by mozart's pre-computed input contract, not by widening sebastian's own toolset |
+| `dexter`, `ian`, `codebase-analyzer`, `codebase-pattern-finder` | `read, search` | static reading only — code-health audit, change-impact tracing, and codebase documentation never need to write or run anything |
+| `codebase-locator` | `search` | path/name lookup only; it doesn't even read file contents by design ("Don't read file contents" is one of its own rules), so it doesn't get `read` either |
+| `xander`, `sarah` | `read, search, web` | external research (advisory lookups, best-practices research); no command need — xander vets dependencies via registries and advisory feeds, not by running anything locally |
+| `web-search-researcher` | `read, search, web, todos` | as upstream — `todos` because it tracks multi-step research queries |
+| `librarian` | `read, search` | **narrowed** (D4) — upstream's `Bash` had no stated use in the verdict-producing work; its one real use was the greenfield quick-check's `git log`/`find` commands, which this port approximates with a `search`/`read`-based file-count and README/CHANGELOG skim instead. Grep-shaped, not shell-shaped, archaeology |
+| `valerie` | `read, search, execute` | runs the plan's Automated commands — that *is* her job (deep-reviewers role, upstream opus tier) |
+| `otto` | `read, search, execute` | `kubectl apply --dry-run=server`, `helm template`, `helm search repo --versions` |
+| `percy` | `read, search, execute, web` | measurement-first: `EXPLAIN`, bundle deltas, load probes; `web` for release-note/advisory lookups |
+| `tessa` | `read, search, execute, edit` | runs suites to assess seams; `edit` for her own findings doc and, in TDD mode, the test contract — never source or test files (Copilot's `edit` is coarser than Claude Code's `Write`/`Edit` split; the boundary is now a stated discipline in her body rather than a capability wall — see her persona) |
 
 ## The model map
 

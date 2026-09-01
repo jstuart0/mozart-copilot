@@ -38,6 +38,12 @@ jobs:
       - name: Runtime-reads manifest is fresh and resolves in-repo (Phase 5 — step 22; re-added Phase 6 now model-map.jsonc exists)
         run: python3 scripts/check_agents.py --check-doc-refs
 
+      - name: Install-check — fresh repo-scope install passes (Phase 1 — step 4)
+        run: |
+          T="$(mktemp -d)"
+          bash scripts/install-bundle.sh --target "$T" --apply
+          python3 scripts/check_agents.py --check-install "$T" --layout repo
+
       - name: Model map covers the roster and the allowlist (Phase 6 — step 30)
         run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 22
 

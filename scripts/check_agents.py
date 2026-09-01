@@ -28,7 +28,7 @@ Usage:
     check_agents.py --map PATH
     check_agents.py --emit-runtime-reads
     check_agents.py --check-doc-refs [TSV_PATH]
-    check_agents.py --check-install DIR
+    check_agents.py --check-install DIR [--layout repo|user]
     check_agents.py --check-carve TSV_PATH
     check_agents.py --check-doc-table
 """
@@ -76,6 +76,28 @@ BUNDLE_DOC_VALID_PREFIXES = {
     "EVAL.md": [".github/mozart/", ".github/mozart/manual/"],
 }
 BUNDLE_REF_RE = re.compile(r"\.github/mozart/[A-Za-z0-9_./-]+")
+
+# D3 — the user-scope bundle root is a legal grant target, never a legal read
+# path. Two closed-form rejection regexes, used together with a bare token
+# search (rule 1's acceptance is the *absence* of a rule-2/rule-3 hit, not a
+# separate positive check):
+#
+#   rule 2 — a path component after the root. The first-character class
+#   deliberately excludes '.' (bob N7): with '.' included, legal prose
+#   "...the bundle at `~/.copilot/mozart/`. Then..." would fire on the
+#   sentence period, contradicting rule 1's acceptance of the bare root.
+USER_BUNDLE_SUFFIX_RE = re.compile(r"(\.copilot|\$\{?COPILOT_HOME\}?)/mozart/[A-Za-z0-9_-]")
+#   rule 3 — the bare root token, used to test whether it co-occurs (per
+#   line) with a shell verb in command position. Not anchored to end-of-
+#   token, so it also matches when a rule-2 suffix is present on the line.
+USER_BUNDLE_ROOT_RE = re.compile(r"~/\.copilot/mozart|\$\{?COPILOT_HOME\}?/mozart")
+#   the command-position verb heuristic (bob N6/N7): trailing '\b' keeps
+#   'cat' from firing on 'catalog' and 'ln' from firing on 'lnk'; the
+#   leading alternation anchors to command position. 'install' is
+#   deliberately absent (bob C1) — the recommended remediation is
+#   `scripts/install-bundle.sh --user-scope --apply`, and a rule that fires
+#   on the fix it recommends trains worse halt messages.
+USER_BUNDLE_SHELL_VERB_RE = re.compile(r"(?:^|[`$;|(]|&&)\s*(?:cp|cat|rsync|ln|tar|mv|scp)\b")
 
 
 # --------------------------------------------------------------------------
@@ -265,11 +287,26 @@ def find_bundle_refs(body_text: str):
 
 def find_outside_bundle_violations(body_text: str):
     violations = set()
-    if ".copilot/mozart" in body_text:
+    # D3 rule 2: a path component cited under the user-scope root. Exact at
+    # the token level — see USER_BUNDLE_SUFFIX_RE's comment for the excluded
+    # '.' first-char case.
+    for m in USER_BUNDLE_SUFFIX_RE.finditer(body_text):
         violations.add(
-            "references the retired user-scope fallback '~/.copilot/mozart' "
-            "(unvalidated — v1 has no fallback; see D9)"
+            f"cites a path under the user-scope bundle root ({m.group(0)!r}) — "
+            "the canonical citation form is '.github/mozart/<file>' (D2); "
+            "the user-scope root ('~/.copilot/mozart' or '$COPILOT_HOME/mozart') may "
+            "be named as a grant target only, never as a read path"
         )
+    # D3 rule 3: the bare root on a line that also shells a copy verb in
+    # command position — the copilot-cli#2173 self-bootstrap idiom.
+    for line in body_text.splitlines():
+        if USER_BUNDLE_ROOT_RE.search(line) and USER_BUNDLE_SHELL_VERB_RE.search(line):
+            violations.add(
+                "shell-copies from the user-scope bundle root at command position "
+                "(github/copilot-cli#2173 — no agent-side self-bootstrap from the "
+                "user-scope root; run `scripts/install-bundle.sh --user-scope --apply` "
+                "instead)"
+            )
     if re.search(r"(^|[^/])docs/manual/", body_text):
         violations.add(
             "references the retired r0 path 'docs/manual/' "
@@ -759,7 +796,32 @@ def cmd_check_doc_refs(path_str=None) -> int:
 # --check-install
 # --------------------------------------------------------------------------
 
-def cmd_check_install(dir_str: str) -> int:
+INSTALL_LAYOUTS = ("repo", "user")
+
+
+def _installed_agents_dir(install_dir: Path, layout: str) -> Path:
+    """Where the installed agent bodies live, per layout."""
+    if layout == "repo":
+        return install_dir / ".github" / "agents"
+    return install_dir / "agents"
+
+
+def _installed_ref_path(install_dir: Path, ref: str, layout: str) -> Path:
+    """Row -> on-disk path, so no caller hand-builds ``DIR/mozart/...``.
+
+    'repo' (today's shape): the manifest row (``.github/mozart/<rest>``) is
+    the path relative to DIR, verbatim.
+    'user' (the Copilot CLI user-scope shape, no ``.github/`` component):
+    the row's leading ``.github/`` is stripped, so ``.github/mozart/<rest>``
+    resolves under ``DIR/mozart/<rest>``.
+    """
+    if layout == "repo":
+        return install_dir / ref
+    assert ref.startswith(".github/"), f"manifest row does not start with '.github/': {ref!r}"
+    return install_dir / ref[len(".github/"):]
+
+
+def cmd_check_install(dir_str: str, layout: str = "repo") -> int:
     if not RUNTIME_READS_TSV.exists():
         print(f"NOTHING TO CHECK: {RUNTIME_READS_TSV.relative_to(REPO_ROOT)} not found — generated in Phase 5 (step 22)")
         return 2
@@ -785,15 +847,17 @@ def cmd_check_install(dir_str: str) -> int:
         if not ref.startswith(BUNDLE_PREFIX):
             errors.append(f"manifest row resolves outside the bundle: {agent}\t{ref}")
             continue
-        if not (install_dir / ref).exists():
-            errors.append(f"row not found in installed copy: {agent}\t{ref}")
+        if not _installed_ref_path(install_dir, ref, layout).exists():
+            errors.append(f"row not found in installed copy ({layout} layout): {agent}\t{ref}")
 
     # The manifest-row check above only walks rows *this repo* already
     # knows about. A file planted directly into the installed copy's own
-    # .github/agents/ — never indexed into this repo's runtime-reads.tsv —
-    # would otherwise pass unnoticed. Re-scan the installed copy's own
-    # agent bodies for outside-bundle references.
-    installed_agents_dir = install_dir / ".github" / "agents"
+    # agent-definitions directory — never indexed into this repo's
+    # runtime-reads.tsv — would otherwise pass unnoticed. Re-scan the
+    # installed copy's own agent bodies for outside-bundle references.
+    # Single-sourced across both layouts (bob M-7): the D3 rule can never be
+    # enforced on one install shape and not the other.
+    installed_agents_dir = _installed_agents_dir(install_dir, layout)
     if installed_agents_dir.exists():
         for f in sorted(installed_agents_dir.glob("*.agent.md")):
             rel = f.relative_to(install_dir)
@@ -1007,6 +1071,13 @@ def build_parser():
              "pass a path to check a scratch copy instead, e.g. for a staleness bite test)",
     )
     p.add_argument("--check-install", metavar="DIR", help="validate an installed bundle copy against the manifest")
+    p.add_argument(
+        "--layout",
+        choices=INSTALL_LAYOUTS,
+        default="repo",
+        help="with --check-install: 'repo' (default, .github/agents + .github/mozart) or "
+             "'user' (agents/ + mozart/, the Copilot CLI user-scope shape)",
+    )
     p.add_argument("--check-carve", metavar="TSV_PATH", help="validate a coverage-map.tsv is total")
     p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
     return p
@@ -1031,7 +1102,7 @@ def main(argv=None) -> int:
         path = None if args.check_doc_refs is True else args.check_doc_refs
         return cmd_check_doc_refs(path)
     if args.check_install:
-        return cmd_check_install(args.check_install)
+        return cmd_check_install(args.check_install, args.layout)
     if args.check_carve:
         return cmd_check_carve(args.check_carve)
     if args.check_doc_table:

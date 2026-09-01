@@ -6,6 +6,35 @@ This file is the contract. Copy the appropriate stanza into your repo's `AGENTS.
 
 ---
 
+## 0. Installing this bundle
+
+If you're reading this file inside a repo you're configuring, the bundle is
+already installed here. If you're reading it from the `mozart-copilot`
+source repo and want to install into another repo, run:
+
+```sh
+scripts/install-bundle.sh --target /path/to/your-repo --apply
+```
+
+This copies `.github/agents/*.agent.md` and this entire `.github/mozart/`
+directory into the target repo. **One resolution path, no fallback**: every
+runtime read any agent makes lives under `<workspace>/.github/mozart/` — the
+directory this file is in. If that path is missing from a workspace, an
+agent stops and names it rather than improvising. There is no user-scope or
+search-path fallback for the bundle itself in v1 (`--user-scope` installs
+*agent definitions* only, to `~/.copilot/agents/`, and prints that the
+bundle is still workspace-scoped and must be installed per repo — see
+`docs/COPILOT_PORT.md` for why the two-step form is designed-for-v2 and
+unvalidated, not shipped).
+
+`.github/mozart/config/model-map.jsonc` installs with the bundle (it's a
+runtime read — mozart asserts the cross-family invariant from it before
+every counterpoint dispatch) and is safe to hand-edit after install; run
+`scripts/apply_models.py --apply` from the source repo first if you'd rather
+edit a preset and re-stamp than hand-edit the map directly.
+
+---
+
 ## 1. Ticketing
 
 Mozart's lifecycle includes ticket creation, state transitions (e.g., when work starts, when it's in review, when it's verified), comments after each phase commit, and ticket closure on signoff. The lifecycle is system-agnostic; only the *system, project, states, and authentication* vary.

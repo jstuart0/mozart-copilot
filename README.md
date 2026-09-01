@@ -28,7 +28,35 @@ Code plugin; also ported to OpenAI Codex CLI as `mozart-codex`).
 
 ## Install
 
-*(install instructions land with `scripts/install-bundle.sh` — Phase 7)*
+There are two install modes. Most people only need the first.
+
+**Repo scope (`--target`)** — installs the full bundle into a consuming
+repo: `.github/agents/*.agent.md` and the whole of `.github/mozart/`.
+Nothing from this repo's own `config/`, `tests/`, or `scripts/` is
+installed — those are build-time-only (D14).
+
+```sh
+scripts/install-bundle.sh --target /path/to/your-repo --apply
+```
+
+Dry-run by default (omit `--apply` to preview, writes nothing). Refuses to
+overwrite an already-installed bundle whose `.github/mozart/VERSION` is
+newer than this repo's, unless you pass `--force`.
+
+**User scope (`--user-scope`)** — installs *agent definitions only*, into
+`~/.copilot/agents/` (the verified Copilot CLI harness path). This does
+**not** install the bundle. Every repo you want mozart to orchestrate still
+needs its own `--target` install — an agent installed only at user scope
+halts on its first read and names the missing path. `--user-scope` prints
+this as a warning on every run.
+
+```sh
+scripts/install-bundle.sh --user-scope --apply
+```
+
+`--target` and `--user-scope` are mutually exclusive (passing both exits 2).
+See `.github/mozart/INTEGRATION.md` for why there's exactly one bundle
+resolution path and no fallback.
 
 ## Use
 

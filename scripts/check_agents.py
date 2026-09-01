@@ -741,6 +741,24 @@ def cmd_check_install(dir_str: str) -> int:
         if not (install_dir / ref).exists():
             errors.append(f"row not found in installed copy: {agent}\t{ref}")
 
+    # The manifest-row check above only walks rows *this repo* already
+    # knows about. A file planted directly into the installed copy's own
+    # .github/agents/ — never indexed into this repo's runtime-reads.tsv —
+    # would otherwise pass unnoticed. Re-scan the installed copy's own
+    # agent bodies for outside-bundle references.
+    installed_agents_dir = install_dir / ".github" / "agents"
+    if installed_agents_dir.exists():
+        for f in sorted(installed_agents_dir.glob("*.agent.md")):
+            rel = f.relative_to(install_dir)
+            try:
+                text = f.read_text(encoding="utf-8")
+                _, body_text = split_frontmatter(text)
+            except FrontmatterError as e:
+                errors.append(f"{rel}: {e}")
+                continue
+            for v in find_outside_bundle_violations(body_text):
+                errors.append(f"{rel}: {v}")
+
     for e in errors:
         print(f"FAIL: {e}")
     return 1 if errors else 0

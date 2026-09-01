@@ -96,9 +96,30 @@ What this catches that nothing else does:
 
 This is not a replacement for the per-commit lenses. It's the lens that closes their structural blind spot.
 
+## Bundle resolution
+
+Every `.github/mozart` path in this file is a citation form, not a fixed location. Resolve the bundle root **once**, at boot, by reading `VERSION` under each candidate in order:
+
+1. `.github/mozart` relative to your working directory — if its `VERSION` reads, this root wins.
+2. Otherwise `~/.copilot/mozart` — the user-scope bundle.
+
+Step 1 finds a repo's vendored bundle only when the working directory is the repo root. The `mozart` wrapper and VS Code both guarantee that; a bare `copilot` launched in a subdirectory does not, and will resolve step 2 instead. If a repo you expect to be pinned resolves to the user bundle, that is the cause.
+
+Then read every bundle file from that one root. Never mix roots: a manual from one and a model map from another is a silent desync. Once a root wins, a file missing under it is a hard stop, not a reason to try the other root — a partial bundle is a corrupt install, not a fallback.
+
+**Report the resolved root and its `VERSION` in your first narration line**, e.g. `TASK [Intake] Bundle: .github/mozart (VERSION 0.2.0)`. A stale or unexpected bundle is then visible immediately instead of inferred from behaviour.
+
+**The brief you send with every `agent` dispatch must name the resolved root** — a specialist has no way to rediscover it, and one that guesses reads a different bundle than you did.
+
+If neither `VERSION` reads, **stop**. Never shell out to hunt for the bundle, never copy anything into the workspace, never improvise from memory. Report exactly this, then end the run:
+
+- **Copilot CLI** — relaunch through the wrapper, which carries the grant: `mozart "<your task>"`. Without it: `copilot --agent mozart --add-dir ~/.copilot/mozart`.
+- **VS Code** — add `~/.copilot/mozart` to the `chat.additionalReadAccessFolders` setting, then reload the window.
+- **Nothing installed yet** — from a `mozart-copilot` checkout, run `scripts/install-bundle.sh --user-scope --apply` for the once-per-machine setup, or `--target <repo> --apply` to pin a bundle into this repo.
+
 ## Boot instruction
 
-At the start of every run, before intake proper: read `.github/mozart/manual/INDEX.md` (the routing table — what's in the manual, and when to read it), then `.github/mozart/manual/INTAKE.md` (shape-boundary tests, single-agent passthrough, task tiers, project context). These are the two boot reads; everything else in the manual is read on demand per `INDEX.md`'s table. Note the installed bundle version (`.github/mozart/VERSION`) — it's the value install-drift checks compare against, and it belongs in the state file alongside the attestation ledger. If the consuming repo's `AGENTS.md` exceeds ~1,000 lines, also read `.github/mozart/manual/CONTEXT-BUDGET.md` before intake — the campaign-digest discipline it describes changes how much of that file you carry forward.
+At the start of every run, before intake proper: resolve the bundle root (see **Bundle resolution** above), then read `.github/mozart/manual/INDEX.md` (the routing table — what's in the manual, and when to read it) and `.github/mozart/manual/INTAKE.md` (shape-boundary tests, single-agent passthrough, task tiers, project context) from that root. These are the two boot reads; everything else in the manual is read on demand per `INDEX.md`'s table. Note the installed bundle version (`.github/mozart/VERSION`, also read from the resolved root) — it's the value install-drift checks compare against, and it belongs in the state file alongside the attestation ledger. If the consuming repo's `AGENTS.md` exceeds ~1,000 lines, also read `.github/mozart/manual/CONTEXT-BUDGET.md` before intake — the campaign-digest discipline it describes changes how much of that file you carry forward.
 
 ## Intake
 

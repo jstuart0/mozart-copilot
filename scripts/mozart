@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# scripts/mozart — the CLI wrapper (D6/D9/D10/D12).
+#
+# PLACEHOLDER — Phase 2. This file exists now only so `install-bundle.sh
+# --user-scope`'s full mode (step 6) has something real to copy into
+# <bin-dir>/mozart, and so Phase 2's collision-refusal gate (A17) has a real
+# file to byte-compare. Phase 3 (plan step 11) replaces this body with the
+# real wrapper: Copilot-home resolution, the custom-COPILOT_HOME symlink
+# contract, cd-to-git-root (D9), and `exec copilot --agent mozart ...`.
+set -euo pipefail
+echo "scripts/mozart: the wrapper is not implemented yet (lands in Phase 3, plan step 11)" >&2
+exit 1

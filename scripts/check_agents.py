@@ -566,7 +566,7 @@ def cmd_validate_all(min_agents) -> int:
 # --map
 # --------------------------------------------------------------------------
 
-def cmd_map(path_str: str) -> int:
+def cmd_map(path_str: str, min_agents=None) -> int:
     p = Path(path_str)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -599,6 +599,11 @@ def cmd_map(path_str: str) -> int:
             errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
 
     discovered = {agent_stem(f) for f in discover_agent_files()}
+    if min_agents is not None and len(discovered) < min_agents:
+        errors.append(
+            f"roster: {len(discovered)} agent file(s) found under .github/agents/, "
+            f"--min-agents requires >= {min_agents}"
+        )
     map_agents = set(agents_block.keys())
     for missing in sorted(discovered - map_agents):
         errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
@@ -901,7 +906,7 @@ def main(argv=None) -> int:
     if args.file:
         return cmd_file(args.file)
     if args.map:
-        return cmd_map(args.map)
+        return cmd_map(args.map, args.min_agents)
     if args.emit_runtime_reads:
         return cmd_emit_runtime_reads()
     if args.check_doc_refs:

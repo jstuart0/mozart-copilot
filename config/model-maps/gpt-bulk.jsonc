@@ -1,0 +1,78 @@
+// Shipped preset: gpt-bulk. Build-time source only, repo root, never
+// installed (D14) — copy this file over .github/mozart/config/model-map.jsonc
+// with `apply_models.py --preset gpt-bulk --apply`, which also stamps every
+// agent's `model:` frontmatter to match.
+//
+// All OpenAI except validation, which is always the non-builder family
+// (D8): under this preset sebastian runs Claude Opus 4.5, so the
+// counterpoint review stays a genuine cross-model read even when the bulk
+// of the roster flips family.
+{
+  "roles": {
+    "conductor": {
+      "model": "gpt-5.4",
+      "family": "openai",
+      "fallback": "gpt-5.1"
+    },
+    "deep-reviewers": {
+      "model": "gpt-5.4",
+      "family": "openai",
+      "fallback": "gpt-5.1"
+    },
+    "builders": {
+      "model": "gpt-5.3-codex",
+      "family": "openai",
+      "fallback": "gpt-5.1-codex"
+    },
+    "reviewers": {
+      "model": "gpt-5.3-codex",
+      "family": "openai",
+      "fallback": "gpt-5.1-codex"
+    },
+    "support": {
+      "model": "gpt-5.3-codex",
+      "family": "openai",
+      "fallback": "gpt-5.1-codex"
+    },
+    "fast-scan": {
+      "model": "gpt-5.4-mini",
+      "family": "openai",
+      "fallback": "gpt-5.1-mini"
+    },
+    "validation": {
+      "model": "claude-opus-4.5",
+      "family": "anthropic",
+      "fallback": "claude-opus-4.1"
+    }
+  },
+  "agents": {
+    "mozart": "conductor",
+
+    "harry": "deep-reviewers",
+    "bob": "deep-reviewers",
+    "ruby": "deep-reviewers",
+    "valerie": "deep-reviewers",
+
+    "jackson": "builders",
+    "hank": "builders",
+    "scott": "builders",
+
+    "dexter": "reviewers",
+    "xander": "reviewers",
+    "otto": "reviewers",
+    "ian": "reviewers",
+    "tessa": "reviewers",
+    "percy": "reviewers",
+    "librarian": "reviewers",
+    "dick": "reviewers",
+    "sarah": "reviewers",
+
+    "codebase-analyzer": "support",
+    "codebase-pattern-finder": "support",
+    "web-search-researcher": "support",
+
+    "codebase-locator": "fast-scan",
+
+    "sebastian": "validation"
+  }
+}

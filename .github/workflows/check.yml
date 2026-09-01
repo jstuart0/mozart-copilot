@@ -20,8 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Parse — check_agents.py compiles
-        run: python3 -m py_compile scripts/check_agents.py
+      - name: Parse — check_agents.py and apply_models.py compile
+        run: python3 -m py_compile scripts/check_agents.py scripts/apply_models.py
 
       - name: Parse — shell scripts have valid syntax
         run: bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
@@ -34,6 +34,29 @@ jobs:
 
       - name: Manual carve is total (Phase 5 — step 21)
         run: python3 scripts/check_agents.py --check-carve tests/coverage-map.tsv
+
+      - name: Runtime-reads manifest is fresh and resolves in-repo (Phase 5 — step 22; re-added Phase 6 now model-map.jsonc exists)
+        run: python3 scripts/check_agents.py --check-doc-refs
+
+      - name: Model map covers the roster and the allowlist (Phase 6 — step 30)
+        run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 22
+
+      - name: Model stamp has no drift from the canonical map (Phase 6 — step 30)
+        run: python3 scripts/apply_models.py --check
+
+      - name: Cross-family invariant holds (Phase 6 — step 30, D8)
+        run: python3 scripts/apply_models.py --check-families
+
+      - name: Upstream tiers preserved (Phase 6 — step 30)
+        run: python3 scripts/apply_models.py --check-tiers
+
+      - name: Every shipped preset is valid (Phase 6 — step 30)
+        # apply_models.py --apply never runs in CI — presets are validated
+        # read-only via --validate-map, never stamped onto the working tree.
+        run: |
+          for m in config/model-maps/*.jsonc; do
+            python3 scripts/apply_models.py --validate-map "$m" --check-families --check-tiers || exit 1
+          done
 
       - name: Lint fixture — clean campaign is clean
         run: bash scripts/mozart-lint.sh tests/fixtures/campaign/clean

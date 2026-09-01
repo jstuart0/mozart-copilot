@@ -1,0 +1,29 @@
+# upstream-tiers.tsv — agent -> upstream model tier, transcribed from
+# /Users/jaystuart/dev/mozart-orchestration/agents/README.md's Model column.
+# Used by scripts/apply_models.py --check-tiers to assert no agent's
+# assigned role sits BELOW its upstream tier (haiku < sonnet < opus).
+# sebastian is exempt by name (net-new, no upstream row) — see D3/step 28
+# and apply_models.py's SEBASTIAN_EXEMPT handling; a missing row for any
+# other agent is a --check-tiers failure, not a silent skip.
+# Columns: agent	upstream_tier
+mozart	opus
+sarah	sonnet
+harry	opus
+bob	sonnet
+dexter	sonnet
+xander	sonnet
+ruby	sonnet
+otto	sonnet
+tessa	sonnet
+percy	sonnet
+librarian	sonnet
+ian	sonnet
+jackson	sonnet
+dick	sonnet
+valerie	sonnet
+scott	sonnet
+hank	sonnet
+codebase-locator	haiku
+codebase-analyzer	sonnet
+codebase-pattern-finder	sonnet
+web-search-researcher	sonnet

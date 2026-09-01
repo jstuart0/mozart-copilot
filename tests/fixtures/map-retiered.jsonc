@@ -1,16 +1,69 @@
 // Negative fixture for apply_models.py --validate-map --check-tiers (Phase 6).
-// codebase-locator is upstream haiku (role "fast-scan"); this map silently
-// retiers it up to "builders" (upstream sonnet), which --check-tiers must
-// reject against tests/fixtures/upstream-tiers.tsv.
+// codebase-locator is upstream haiku (role 'fast-scan'); this map silently
+// retiers it up to 'builders' (sonnet tier) — an undisclosed upgrade outside
+// the deep-reviewers exception. --check-tiers must reject it against
+// tests/fixtures/upstream-tiers.tsv. Otherwise a full valid 22-agent map
+// (copy of the canonical map).
 {
   "roles": {
-    "conductor": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" },
-    "builders": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" },
-    "fast-scan": { "model": "claude-haiku-4-5", "family": "anthropic", "fallback": "claude-haiku-4-1" }
+    "conductor": {
+      "model": "claude-opus-4.5",
+      "family": "anthropic",
+      "fallback": "claude-opus-4.1"
+    },
+    "deep-reviewers": {
+      "model": "claude-opus-4.5",
+      "family": "anthropic",
+      "fallback": "claude-opus-4.1"
+    },
+    "builders": {
+      "model": "claude-sonnet-4.5",
+      "family": "anthropic",
+      "fallback": "claude-sonnet-4.1"
+    },
+    "reviewers": {
+      "model": "claude-sonnet-4.5",
+      "family": "anthropic",
+      "fallback": "claude-sonnet-4.1"
+    },
+    "support": {
+      "model": "claude-sonnet-4.5",
+      "family": "anthropic",
+      "fallback": "claude-sonnet-4.1"
+    },
+    "fast-scan": {
+      "model": "claude-haiku-4.5",
+      "family": "anthropic",
+      "fallback": "claude-haiku-4.1"
+    },
+    "validation": {
+      "model": "gpt-5.4",
+      "family": "openai",
+      "fallback": "gpt-5.1"
+    }
   },
   "agents": {
     "mozart": "conductor",
+    "harry": "deep-reviewers",
+    "bob": "deep-reviewers",
+    "ruby": "deep-reviewers",
+    "valerie": "deep-reviewers",
     "jackson": "builders",
-    "codebase-locator": "builders"
+    "hank": "builders",
+    "scott": "builders",
+    "dexter": "reviewers",
+    "xander": "reviewers",
+    "otto": "reviewers",
+    "ian": "reviewers",
+    "tessa": "reviewers",
+    "percy": "reviewers",
+    "librarian": "reviewers",
+    "dick": "reviewers",
+    "sarah": "reviewers",
+    "codebase-analyzer": "support",
+    "codebase-pattern-finder": "support",
+    "web-search-researcher": "support",
+    "codebase-locator": "builders",
+    "sebastian": "validation"
   }
 }

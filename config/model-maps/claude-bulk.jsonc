@@ -1,6 +1,11 @@
-// Negative fixture: roles.validation.family deliberately set equal to
-// roles.builders.family — apply_models.py --check-families must exit 1.
-// Otherwise a full valid 22-agent map (copy of the canonical map).
+// Shipped preset: claude-bulk. Build-time source only, repo root, never
+// installed (D14) — copy this file over .github/mozart/config/model-map.jsonc
+// with `apply_models.py --preset claude-bulk --apply`, which also stamps
+// every agent's `model:` frontmatter to match.
+//
+// All Anthropic except validation, which is always the non-builder family
+// (D8): sebastian runs GPT-5.4 under this preset so the counterpoint review
+// is a genuine cross-model read, not a same-family echo.
 {
   "roles": {
     "conductor": {
@@ -34,20 +39,23 @@
       "fallback": "claude-haiku-4.1"
     },
     "validation": {
-      "model": "claude-opus-4.5",
-      "family": "anthropic",
-      "fallback": "claude-opus-4.1"
+      "model": "gpt-5.4",
+      "family": "openai",
+      "fallback": "gpt-5.1"
     }
   },
   "agents": {
     "mozart": "conductor",
+
     "harry": "deep-reviewers",
     "bob": "deep-reviewers",
     "ruby": "deep-reviewers",
     "valerie": "deep-reviewers",
+
     "jackson": "builders",
     "hank": "builders",
     "scott": "builders",
+
     "dexter": "reviewers",
     "xander": "reviewers",
     "otto": "reviewers",
@@ -57,10 +65,13 @@
     "librarian": "reviewers",
     "dick": "reviewers",
     "sarah": "reviewers",
+
     "codebase-analyzer": "support",
     "codebase-pattern-finder": "support",
     "web-search-researcher": "support",
+
     "codebase-locator": "fast-scan",
+
     "sebastian": "validation"
   }
 }

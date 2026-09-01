@@ -29,8 +29,11 @@ jobs:
       - name: Validator self-test (fixture corpus)
         run: python3 scripts/check_agents.py --self-test --forms
 
-      - name: Roster floor (Phase 1 — step 8 owns this at 0; later phases raise it)
-        run: python3 scripts/check_agents.py --min-agents 0
+      - name: Roster floor (raised to 22 in Phase 5 — step 25)
+        run: python3 scripts/check_agents.py --min-agents 22
+
+      - name: Manual carve is total (Phase 5 — step 21)
+        run: python3 scripts/check_agents.py --check-carve tests/coverage-map.tsv
 
       - name: Lint fixture — clean campaign is clean
         run: bash scripts/mozart-lint.sh tests/fixtures/campaign/clean

@@ -54,7 +54,17 @@ WARN_CHARS = 27000
 FAIL_CHARS = 30000
 
 CANONICAL_MODEL_MAP = ".github/mozart/config/model-map.jsonc"
-BUNDLE_DOC_BASENAMES = ["PIPELINE.md", "LEARNINGS.md", "INTEGRATION.md", "EVAL.md"]
+# EVAL.md exists at two canonical bundle locations: the schema/reference doc
+# at bundle root and the pipeline-procedure doc under manual/ (see
+# .github/mozart/manual/INDEX.md's disambiguation note — both are real,
+# distinct, required reads). Every other basename here has exactly one
+# canonical location.
+BUNDLE_DOC_VALID_PREFIXES = {
+    "PIPELINE.md": [".github/mozart/"],
+    "LEARNINGS.md": [".github/mozart/"],
+    "INTEGRATION.md": [".github/mozart/"],
+    "EVAL.md": [".github/mozart/", ".github/mozart/manual/"],
+}
 BUNDLE_REF_RE = re.compile(r"\.github/mozart/[A-Za-z0-9_./-]+")
 
 
@@ -256,17 +266,22 @@ def find_outside_bundle_violations(body_text: str):
             "(manual docs live under .github/mozart/manual/)"
         )
     for m in re.finditer(r"[\w./~-]*model-map[\w./-]*", body_text):
-        token = m.group(0).strip("`'\".,()")
+        # rstrip only — trailing punctuation from prose ("...jsonc.", "...jsonc)").
+        # A leading '.' is meaningful here (".github/...") and must never be stripped;
+        # the capture class already excludes backtick/quote, so nothing wrapping needs it.
+        token = m.group(0).rstrip(".,;:)")
         if token != CANONICAL_MODEL_MAP:
             violations.add(
                 f"references 'model-map' outside the canonical bundle path "
                 f"({token!r} != {CANONICAL_MODEL_MAP!r})"
             )
-    for name in BUNDLE_DOC_BASENAMES:
+    for name, valid_prefixes in BUNDLE_DOC_VALID_PREFIXES.items():
         for m in re.finditer(re.escape(name), body_text):
             start = m.start()
-            prefix = body_text[max(0, start - len(BUNDLE_PREFIX)):start]
-            if prefix != BUNDLE_PREFIX:
+            if not any(
+                body_text[max(0, start - len(prefix)):start] == prefix
+                for prefix in valid_prefixes
+            ):
                 violations.add(f"references '{name}' without the '.github/mozart/' bundle prefix")
     return sorted(violations)
 

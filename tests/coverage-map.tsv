@@ -1,0 +1,40 @@
+# coverage-map.tsv — the mozart.md carve, asserted total by lines AND characters (step 21).
+# Source: /Users/jaystuart/dev/mozart-orchestration/agents/mozart.md, body lines 7-2400
+# (the two-delimiter extractor's output — see docs/COPILOT_PORT.md).
+# Columns: start_line	end_line	chars	destination
+# expected_chars=241189
+7	11	384	conductor-body:preamble
+12	24	1777	conductor-body:code-retrieval-generalized
+25	67	4137	conductor-body:subagent-preflight-rewrite
+68	80	2190	conductor-body:continuation-rule+manual/FLOWS.md:continuation-detail
+81	97	1288	conductor-body:default-standard-verbatim
+98	143	6804	manual/COUNTERPOINT.md:rewritten
+144	155	768	conductor-body:where-you-fit
+156	170	3651	conductor-body:six-shapes-table+manual/INTAKE.md:boundary-tests
+171	194	3132	conductor-body:consistency-lens-wiring-sites
+195	264	4586	manual/INTAKE.md:single-agent-passthrough
+265	276	796	manual/INTAKE.md:task-tiers
+277	295	1538	manual/INTAKE.md:project-context
+296	379	7963	manual/WORKTREES.md:multi-campaign-mode
+380	384	355	manual/FLOWS.md:operating-modes
+385	406	3627	manual/FLOWS.md:build-time-flags
+407	450	2976	manual/FLOWS.md:partial-flows
+451	496	2824	manual/FLOWS.md:resume-entry-points
+497	547	3758	manual/FLOWS.md:run-identification-prior-art
+548	622	8362	manual/WORKTREES.md:worktree-isolation
+623	896	27536	manual/STATE.md:state-persistence
+897	1110	12785	manual/STATE.md:pipeline-flow-sketch
+1111	1126	4846	deliberately-deleted:external-tool-execution
+1127	1136	1549	manual/CONTEXT-BUDGET.md
+1137	1548	62445	manual/DELIVER.md
+1549	1610	4201	manual/AUDIT.md
+1611	1645	4884	manual/DIAGNOSE.md
+1646	1725	11843	manual/OPERATE.md
+1726	1800	9756	manual/INCIDENT.md
+1801	1829	5168	manual/EVAL.md
+1830	2223	22260	manual/TICKETS.md
+2224	2237	4469	conductor-body:orchestration-discipline
+2238	2334	5248	conductor-body:narration-cadence-compressed
+2335	2361	1020	conductor-body:communicate-at-checkpoints
+2362	2381	1460	conductor-body:communicate-as-you-work-merged
+2382	2400	803	conductor-body:field-notes-stub

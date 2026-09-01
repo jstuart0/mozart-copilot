@@ -16,6 +16,8 @@ Usage:
     apply_models.py --check-families          # canonical map, exit 1 if same family
     apply_models.py --check-tiers             # canonical map, exit 1 on downgrade
     apply_models.py --explain                 # per-role model/family/fallback, human-readable
+    apply_models.py --check --agents-dir DIR --validate-map PATH
+                                               # audit an installed (out-of-tree) pair, read-only
 
 Invariants checked by every structural validation pass (exit 1 on any):
   - the map's `agents` block covers exactly the .github/agents/*.agent.md set
@@ -80,6 +82,24 @@ def resolve_map_path(path_str) -> Path:
     return p
 
 
+def resolve_agents_dir(path_str) -> Path:
+    if path_str is None:
+        return None
+    p = Path(path_str)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
+
+def rel_or_abs(p: Path) -> str:
+    """Display a path relative to REPO_ROOT when it's under the source
+    checkout; absolute otherwise. An installed (out-of-tree) file — reached
+    via --agents-dir or an out-of-tree --validate-map path — makes
+    Path.relative_to(REPO_ROOT) raise ValueError, which this guards against
+    (bob H2)."""
+    return str(p.relative_to(REPO_ROOT)) if p.is_relative_to(REPO_ROOT) else str(p)
+
+
 def load_map(path: Path):
     """Returns (map_dict, errors). map_dict is {} on parse failure."""
     if not path.exists():
@@ -93,8 +113,13 @@ def load_map(path: Path):
     return m, []
 
 
-def validate_structure(m: dict) -> list:
-    """The three baseline invariants shared by every check. Returns errors."""
+def validate_structure(m: dict, agents_dir: Path = None) -> list:
+    """The three baseline invariants shared by every check. Returns errors.
+
+    agents_dir (codex M2, bob H2): validate against an installed roster
+    (--agents-dir) instead of .github/agents/ — without this, an
+    installed-tree check would validate map coverage against the *source
+    checkout's* roster and report a clean bill for the wrong tree."""
     errors = []
     roles = m.get("roles")
     agents_block = m.get("agents")
@@ -114,12 +139,18 @@ def validate_structure(m: dict) -> list:
         if role not in roles:
             errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
 
-    discovered = {agent_stem(f) for f in discover_agent_files()}
+    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
+    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
     map_agents = set(agents_block.keys())
     for missing in sorted(discovered - map_agents):
         errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
     for extra in sorted(map_agents - discovered):
-        errors.append(f"map assigns a role to '{extra}' but no .github/agents/{extra}.agent.md exists")
+        # bob N9: name the directory actually searched, not a hardcoded
+        # '.github/agents/' — under --agents-dir that literal would send the
+        # operator looking in the source checkout for a file missing from
+        # the *installed* tree.
+        missing_path = effective_agents_dir / f"{extra}.agent.md"
+        errors.append(f"map assigns a role to '{extra}' but no {rel_or_abs(missing_path)} exists")
 
     return errors
 
@@ -226,7 +257,7 @@ def cmd_explain(path_str) -> int:
             print(f"FAIL: {e}")
         return 1
     roles = m.get("roles") or {}
-    print(f"map: {path.relative_to(REPO_ROOT)}")
+    print(f"map: {rel_or_abs(path)}")
     for role_name in sorted(roles):
         r = roles[role_name]
         print(f"  {role_name:16s} model={r.get('model')!r:24s} family={r.get('family')!r:10s} fallback={r.get('fallback')!r}")
@@ -263,12 +294,12 @@ def current_model(text: str):
     return None
 
 
-def compute_diffs(m: dict):
+def compute_diffs(m: dict, agents_dir: Path = None):
     """Returns (diffs, errors). diffs: list of (file, stem, old_model, new_model)."""
     roles = m.get("roles") or {}
     agents_block = m.get("agents") or {}
     diffs, errors = [], []
-    for f in discover_agent_files():
+    for f in discover_agent_files(agents_dir):
         stem = agent_stem(f)
         role = agents_block.get(stem)
         if role is None:
@@ -281,29 +312,29 @@ def compute_diffs(m: dict):
             text = f.read_text(encoding="utf-8")
             old_model = current_model(text)
         except FrontmatterError as e:
-            errors.append(f"{f.relative_to(REPO_ROOT)}: {e}")
+            errors.append(f"{rel_or_abs(f)}: {e}")
             continue
         if old_model != new_model:
             diffs.append((f, stem, old_model, new_model))
     return diffs, errors
 
 
-def cmd_check(path_str=None) -> int:
+def cmd_check(path_str=None, agents_dir: Path = None) -> int:
     path = resolve_map_path(path_str)
     m, errors = load_map(path)
     if errors:
         for e in errors:
             print(f"FAIL: {e}")
         return 1
-    struct_errors = validate_structure(m)
+    struct_errors = validate_structure(m, agents_dir)
     for e in struct_errors:
         print(f"FAIL: {e}")
 
-    diffs, diff_errors = compute_diffs(m)
+    diffs, diff_errors = compute_diffs(m, agents_dir)
     for e in diff_errors:
         print(f"FAIL: {e}")
     for f, stem, old, new in diffs:
-        print(f"DRIFT {f.relative_to(REPO_ROOT)}: model: {old} != map's {new!r} for role of '{stem}'")
+        print(f"DRIFT {rel_or_abs(f)}: model: {old} != map's {new!r} for role of '{stem}'")
 
     return 1 if (struct_errors or diff_errors or diffs) else 0
 
@@ -388,7 +419,7 @@ def cmd_stamp(apply: bool, preset: str) -> int:
 # --validate-map / --check-families / --check-tiers dispatch
 # --------------------------------------------------------------------------
 
-def run_map_checks(path_str, do_families: bool, do_tiers: bool) -> int:
+def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path = None) -> int:
     path = resolve_map_path(path_str)
     m, errors = load_map(path)
     if errors:
@@ -396,7 +427,7 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool) -> int:
             print(f"FAIL: {e}")
         return 1
 
-    all_errors = list(validate_structure(m))
+    all_errors = list(validate_structure(m, agents_dir))
     if do_families:
         all_errors += check_families(m)
     if do_tiers:
@@ -407,7 +438,7 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool) -> int:
     for e in all_errors:
         print(f"FAIL: {e}")
     if not all_errors:
-        print(f"OK: {path.relative_to(REPO_ROOT)}")
+        print(f"OK: {rel_or_abs(path)}")
     return 1 if all_errors else 0
 
 
@@ -424,6 +455,12 @@ def build_parser():
     p.add_argument("--check-families", action="store_true", help="assert roles.validation.family != roles.builders.family (D8)")
     p.add_argument("--check-tiers", action="store_true", help="assert no agent's role sits below its upstream tier")
     p.add_argument("--explain", action="store_true", help="print each role's model/family/fallback")
+    p.add_argument(
+        "--agents-dir",
+        metavar="DIR",
+        help="validate against an installed agents directory (e.g. <copilot-home>/agents) instead of "
+             ".github/agents/. Read-only — not valid with --apply.",
+    )
     return p
 
 
@@ -436,13 +473,19 @@ def main(argv=None) -> int:
     if args.preset and args.validate_map:
         print("usage error: --preset and --validate-map are mutually exclusive")
         return 2
+    if args.agents_dir and args.apply:
+        print("usage error: --agents-dir is read-only and not valid with --apply (--apply remains repo-only)")
+        return 2
 
     # Every read-only check below composes in one invocation instead of a
     # first-matching-flag-wins dispatch (the same class of bug as Phase 6's
     # check_agents.py --map/--min-agents gap, found again here by codex r2).
     # --validate-map PATH selects which map every one of them runs against;
-    # None means the canonical map.
+    # None means the canonical map. --agents-dir DIR does the same for which
+    # agent-definitions roster every one of them validates against; None
+    # means .github/agents/.
     active_map_path = args.validate_map
+    active_agents_dir = resolve_agents_dir(args.agents_dir)
     ran_a_check = False
     exit_code = 0
 
@@ -453,13 +496,13 @@ def main(argv=None) -> int:
         ran_a_check = True
 
     if args.validate_map or args.check_families or args.check_tiers:
-        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers)
+        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers, active_agents_dir)
         if rc != 0:
             exit_code = 1
         ran_a_check = True
 
     if args.check:
-        rc = cmd_check(active_map_path)
+        rc = cmd_check(active_map_path, active_agents_dir)
         if rc != 0:
             exit_code = 1
         ran_a_check = True

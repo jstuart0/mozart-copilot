@@ -593,10 +593,11 @@ def cmd_file(path_str: str) -> int:
 # Default: validate the whole .github/agents/ roster.
 # --------------------------------------------------------------------------
 
-def discover_agent_files():
-    if not AGENTS_DIR.exists():
+def discover_agent_files(agents_dir: Path = None):
+    d = agents_dir if agents_dir is not None else AGENTS_DIR
+    if not d.exists():
         return []
-    return sorted(AGENTS_DIR.glob("*.agent.md"))
+    return sorted(d.glob("*.agent.md"))
 
 
 def cmd_validate_all(min_agents) -> int:

@@ -57,6 +57,21 @@ Two correct ways to change models, in order of preference:
    (map updated, one agent's frontmatter missed) is a silent desync until
    someone notices at review time or later. Use this only when reinstalling
    from source isn't an option.
+3. **User-scope: edit in the source checkout, then reinstall system-wide.**
+   Same first step as option 1 — hand-edit
+   `.github/mozart/config/model-map.jsonc` (or run
+   `apply_models.py --preset <name> --apply`) in the `mozart-copilot` source
+   repo, then `apply_models.py --apply` to stamp every agent's frontmatter to
+   match — but reinstall with
+   `scripts/install-bundle.sh --user-scope --apply --force` instead of
+   `--target`. The install is an atomic re-copy of an already-validated
+   pair: the gates run where their build-time inputs exist (the source
+   checkout), not against the installed copy, so nothing needs to re-run
+   `--check` on the just-installed home for the reinstall to be trustworthy.
+   To audit an already-installed user-scope home in place — without a
+   source checkout, e.g. to confirm it wasn't hand-edited out of sync —
+   the single supported spelling is:
+   `apply_models.py --check --agents-dir <copilot-home>/agents --validate-map <copilot-home>/mozart/config/model-map.jsonc`.
 
 ---
 

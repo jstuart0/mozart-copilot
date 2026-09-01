@@ -1,9 +1,9 @@
 // Negative fixture for apply_models.py --validate-map --check-tiers (Phase 6).
 // codebase-locator is upstream haiku (role 'fast-scan'); this map silently
-// retiers it up to 'builders' (sonnet tier) — an undisclosed upgrade outside
-// the deep-reviewers exception. --check-tiers must reject it against
-// tests/fixtures/upstream-tiers.tsv. Otherwise a full valid 22-agent map
-// (copy of the canonical map).
+// retiers it up to 'builders' (sonnet tier) — an undisclosed upgrade.
+// --check-tiers must reject it against tests/fixtures/upstream-tiers.tsv
+// (exact tier match for every agent except sebastian, exempt by name — r5).
+// Otherwise a full valid 22-agent map (copy of the canonical map).
 {
   "roles": {
     "conductor": {

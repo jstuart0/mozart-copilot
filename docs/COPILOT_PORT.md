@@ -177,9 +177,18 @@ Nine rules, applied to every ported persona and every bundle document:
    deferred-tool-loading concept; a persona's `## Code retrieval` section is
    rewritten around "does this workspace expose a finer-grained search tool"
    rather than a specific loading mechanism.
-4. **"single parallel tool-call message" → "parallel subagent dispatch"** —
-   the underlying behavior (fan out independent work in one turn) is
-   identical; only the vocabulary describing the primitive changes.
+4. **"single parallel tool-call message" → "parallel subagent dispatch",
+   scoped to agents that actually dispatch.** The underlying behavior (fan
+   out independent work in one turn) is identical for mozart, the one agent
+   with `agent` in `tools:` — only the vocabulary describing the primitive
+   changes. For every other persona, "parallel tool-call message" means
+   batching that agent's *own* tool calls (multiple edits, parallel reads,
+   parallel `execute` checks) in one turn — never subagent dispatch, since
+   no specialist has the `agent` tool (D10). Mechanically substituting
+   "subagent dispatch" into a persona with `agents: []` describes a
+   capability it doesn't have; `jackson.agent.md` shipped exactly that
+   mistranslation and was corrected in reconciliation round 1 (see
+   Implementation notes).
 5. **Frontmatter always explicit** — `tools:` never omitted, `model:` always
    a scalar string, `agents: []` on every specialist, `user-invocable: false`
    on every specialist.
@@ -348,17 +357,20 @@ python3 scripts/apply_models.py --preset gpt-bulk --apply      # 21 builders/rev
 contradiction of what sebastian is *for* (D8), so this is enforced as code,
 not left as a documentation warning a preset author could forget.
 
-**The `deep-reviewers` tier exception.** `--check-tiers` asserts every
-agent's role matches its upstream Claude-edition tier *exactly* — an
-undisclosed upgrade is caught the same as an undisclosed downgrade (Phase 6
-found this the hard way: see Implementation notes below). `deep-reviewers`
-is the one disclosed exception. Its four members are `harry` (upstream
-opus — no change), plus `bob`, `ruby`, and `valerie` (upstream sonnet,
-deliberately stamped up to this port's opus tier). That decision was made
-once, in Phase 2's exemplar stamping (`bob`), carried through every
-subsequent phase, and is now the encoded invariant `--check-tiers` protects:
-`deep-reviewers` may sit *at or above* its members' upstream tier; every
-other role must match exactly, in either direction.
+**`deep-reviewers` is an exact tier match — there is no exception.**
+`--check-tiers` asserts every agent's role matches its upstream tier
+*exactly*, with `sebastian` exempt by name (net-new, no upstream persona).
+An earlier revision of this document described `deep-reviewers` as a
+disclosed *upgrade* for `bob`, `ruby`, and `valerie`, sourced from
+`agents/README.md`'s Model column, which lists all three as `sonnet`. That
+column is **stale**. Each persona's own `model:` frontmatter
+(`/Users/jaystuart/dev/mozart-orchestration/agents/{bob,ruby,valerie}.md`)
+reads `opus`, matching `harry`. All four `deep-reviewers` members are
+upstream opus; the role is a straightforward, tier-preserving mapping, not
+an upgrade. `tests/fixtures/upstream-tiers.tsv` is transcribed from
+frontmatter, not from `README.md`, for exactly this reason — see
+Implementation notes below for the disagreement this uncovered and how it's
+tracked without gating on it.
 
 **Model-id string convention.** The plan's role table gives human-readable
 model names, not literal API identifiers — those are user-edited and
@@ -378,7 +390,7 @@ Every role also carries a same-family `fallback`, surfaced by
 global model policy went GA 2026-08-26).
 
 - `jackson` — role `builders` → `claude-sonnet-4.5`
-- `bob` — role `deep-reviewers` → `claude-opus-4.5` (the tier exception)
+- `bob` — role `deep-reviewers` → `claude-opus-4.5` (upstream opus, exact match)
 - `sebastian` — role `validation` → `gpt-5.4` (the non-builder family, D8)
 
 ## Model attestation
@@ -494,7 +506,19 @@ matching flag (fixed by threading `min_agents` into `cmd_map` directly); and
 `--check-tiers`'s first design ("no downgrade below upstream tier") was too
 loose to catch an *upward* undisclosed retier, caught by the pre-existing
 `tests/fixtures/map-retiered.jsonc` scaffold's own documented scenario —
-redesigned to the exact-match-except-`deep-reviewers` rule described above.
+redesigned to exact tier match for every agent, `sebastian` exempt by name.
+
+A reconciliation round (r5) found a third: this document's own model-map
+section originally described `deep-reviewers` as a disclosed tier
+*exception*, sourced from `agents/README.md`'s stale Model column
+(`bob`/`ruby`/`valerie` listed as `sonnet`). Their actual frontmatter reads
+`opus`. `--check-tiers` never had an exception to remove — it was carrying
+dead carve-out code for an upgrade that was never real, atop an exact-match
+rule that was already correct for the other 20 agents. `tests/fixtures/upstream-tiers.tsv`
+is now transcribed from frontmatter directly, with a non-gating DATA
+cross-check against `README.md` reported alongside it (three lines, exit 0
+— `bob`, `ruby`, `valerie`) so the upstream doc's staleness stays visible
+without failing this port's own CI.
 
 ## Pending manual verification
 

@@ -64,7 +64,7 @@ Unless the user explicitly asks for the quick / easy / temporary path, **pursue 
 
 ### Parallelize independent work streams
 - Within a phase, identify what's genuinely independent: edits to unrelated files, reads of unrelated modules, separate test/lint/type-check runs, exploratory searches that don't depend on each other
-- Batch independent operations into **parallel subagent dispatch** — multiple edits at once, parallel reads, parallel checks
+- Batch independent operations into one turn's parallel tool calls — multiple edits at once, parallel reads, parallel execute/checks. You don't dispatch subagents (`agents: []`) — this is about batching your own tool calls, not fanning work out to other agents
 - **Don't parallelize when work shares files, types, or sequencing** — parallel edits to the same file lose information; parallel work that depends on a prior step's output corrupts state
 - Default to sequential when in doubt; parallelize only when independence is clear
 - When mozart invokes you on a *single stream* of a parallel phase, stay in that lane — don't touch files belonging to another stream that's running concurrently

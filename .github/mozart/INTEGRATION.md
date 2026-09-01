@@ -29,9 +29,34 @@ unvalidated, not shipped).
 
 `.github/mozart/config/model-map.jsonc` installs with the bundle (it's a
 runtime read — mozart asserts the cross-family invariant from it before
-every counterpoint dispatch) and is safe to hand-edit after install; run
-`scripts/apply_models.py --apply` from the source repo first if you'd rather
-edit a preset and re-stamp than hand-edit the map directly.
+every counterpoint dispatch). **Hand-editing the installed copy of this file
+alone is not safe** — it only moves the runtime family assert. Each agent's
+actual `model:` is pinned in its own frontmatter (`.github/agents/*.agent.md`),
+stamped once at install time from whatever the source checkout's map said
+then; `scripts/`, `apply_models.py`, and the presets are build-time only and
+are never installed (D14), so nothing in the installed repo can re-stamp
+frontmatter from an edited map. Hand-edit the installed map alone and the
+family assert can pass against values the agents aren't actually running —
+the exact desynchronization this bundle's cross-family gate exists to catch.
+
+Two correct ways to change models, in order of preference:
+
+1. **Recommended: edit in the source checkout, then reinstall.** In the
+   `mozart-copilot` source repo, hand-edit
+   `.github/mozart/config/model-map.jsonc` (or run `apply_models.py --preset <name> --apply`),
+   run `apply_models.py --apply` to stamp every agent's frontmatter to
+   match, then reinstall: `scripts/install-bundle.sh --target <this-repo> --apply --force`.
+   This is the only path `--check`, `--check-families`, and `--check-tiers`
+   actually validate before anything ships — map and frontmatter can't drift
+   apart.
+2. **Hand-edit both, consistently, in the installed copy.** If you can't
+   touch the source checkout, edit `.github/mozart/config/model-map.jsonc`
+   *and* every affected agent's `model:` frontmatter in the same change, by
+   hand, in the installed repo. Nothing validates this for you — there's no
+   installed `apply_models.py` to run `--check` with — so a partial edit
+   (map updated, one agent's frontmatter missed) is a silent desync until
+   someone notices at review time or later. Use this only when reinstalling
+   from source isn't an option.
 
 ---
 

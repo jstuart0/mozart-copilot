@@ -38,7 +38,7 @@
 # Exit: 0 success (including dry run and no-op); 1 refused (e.g. a would-be
 # downgrade without --force); 2 usage error.
 
-set -u
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_VERSION_FILE="$REPO_ROOT/.github/mozart/VERSION"
@@ -61,8 +61,8 @@ version_gt() {
   local a="$1" b="$2"
   local a_core="${a%%-*}" b_core="${b%%-*}"
   local a_pre=0 b_pre=0
-  [ "$a" != "$a_core" ] && a_pre=1
-  [ "$b" != "$b_core" ] && b_pre=1
+  if [ "$a" != "$a_core" ]; then a_pre=1; fi
+  if [ "$b" != "$b_core" ]; then b_pre=1; fi
   local IFS=.
   local -a av=($a_core) bv=($b_core)
   local i

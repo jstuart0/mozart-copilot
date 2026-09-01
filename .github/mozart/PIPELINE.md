@@ -53,7 +53,10 @@ When mozart briefs another agent, it carries this standard forward — it does n
 | **scott** | Technical writer | builders |
 | **sebastian** | Independent cross-model counterpoint reviewer (net-new — see D1/D2 in the campaign plan) | validation — **must be the non-builder family** (D8) |
 
-Support agents (tool specialists, not personas):
+Support agents — real `.github/agents/*.agent.md` personas, part of the
+22-agent roster, but tool specialists rather than pipeline-stage reviewers
+(no fixed stage number of their own; used on demand by the agents in the
+"Used by" column):
 
 | Agent | Model role (map) | Used by |
 |---|---|---|

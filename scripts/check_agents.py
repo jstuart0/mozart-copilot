@@ -44,6 +44,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / ".github" / "agents"
+
+# Upstream source of truth for the manual carve (Phase 5, step 21; campaign
+# plan Context section). Hardcoded here — these are the AUTHORITY;
+# tests/coverage-map.tsv's own '# expected_chars=<N>' header is a
+# cross-check against them, never the source of truth on its own (a header
+# edited to match wrong rows must not be sufficient to pass --check-carve).
+UPSTREAM_CARVE_START_LINE = 7
+UPSTREAM_CARVE_END_LINE = 2400
+UPSTREAM_CARVE_EXPECTED_CHARS = 241189
+UPSTREAM_MOZART_MD = Path("/Users/jaystuart/dev/mozart-orchestration/agents/mozart.md")
 BUNDLE_PREFIX = ".github/mozart/"
 TOOLSETS_PATH = REPO_ROOT / "config" / "toolsets.jsonc"
 RUNTIME_READS_TSV = REPO_ROOT / "tests" / "runtime-reads.tsv"
@@ -414,6 +424,26 @@ def validate_agent_file(path: Path) -> ValidationResult:
                 "(the agent tool is granted but nothing is dispatchable)"
             )
 
+        # D10: dispatch authority is mozart's alone. mozart must actually
+        # hold it — not merely be permitted to by the correlation check
+        # above — and every other agent must not, even if its own agents:
+        # / tools: pairing is internally self-consistent.
+        if stem == "mozart":
+            if not agent_in_tools or not agents_nonempty:
+                errors.append(
+                    "'mozart' must have the 'agent' tool and a non-empty 'agents:' allowlist "
+                    "— it's the conductor (D10)"
+                )
+        else:
+            if agent_in_tools:
+                errors.append(
+                    f"'{stem}' holds the 'agent' tool, but only 'mozart' may dispatch subagents (D10)"
+                )
+            if agents_nonempty:
+                errors.append(
+                    f"'{stem}' has a non-empty 'agents:' allowlist, but only 'mozart' may dispatch subagents (D10)"
+                )
+
     # only mozart may be user-invocable: true (D10)
     if user_invocable is True and stem != "mozart":
         errors.append("frontmatter 'user-invocable: true' is set, but only 'mozart' may be user-invocable")
@@ -549,9 +579,18 @@ def cmd_validate_all(min_agents) -> int:
         if r.data.get("user-invocable") is True:
             invocable_true.append(f)
 
-    if len(invocable_true) > 1:
+    if len(invocable_true) == 0:
+        print("FAIL roster: no agent is user-invocable: true — 'mozart' (the conductor) must be (D10)")
+        any_fail = True
+    elif len(invocable_true) > 1:
         names = ", ".join(f.name for f in invocable_true)
         print(f"FAIL roster: more than one agent is user-invocable: true: {names}")
+        any_fail = True
+    elif agent_stem(invocable_true[0]) != "mozart":
+        print(
+            f"FAIL roster: the one user-invocable: true agent must be 'mozart', "
+            f"found '{agent_stem(invocable_true[0])}' (D10)"
+        )
         any_fail = True
 
     if min_agents is not None and len(files) < min_agents:
@@ -784,7 +823,7 @@ def cmd_check_carve(tsv_path_str: str) -> int:
         print(f"NOTHING TO CHECK: coverage-map.tsv not found at {p} — created in Phase 5 (step 21)")
         return 2
 
-    expected_chars = None
+    header_expected_chars = None
     rows = []
     for lineno, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
@@ -792,7 +831,7 @@ def cmd_check_carve(tsv_path_str: str) -> int:
         if line.lstrip().startswith("#"):
             m = re.match(r"#\s*expected_chars\s*=\s*(\d+)", line.strip())
             if m:
-                expected_chars = int(m.group(1))
+                header_expected_chars = int(m.group(1))
             continue
         parts = line.split("\t")
         if len(parts) != 4:
@@ -808,12 +847,21 @@ def cmd_check_carve(tsv_path_str: str) -> int:
     if not rows:
         print(f"FAIL: {p} has no data rows")
         return 1
-    if expected_chars is None:
-        print(f"FAIL: {p} has no '# expected_chars=<N>' header — cannot verify the checksum")
+    if header_expected_chars is None:
+        print(f"FAIL: {p} has no '# expected_chars=<N>' header")
         return 1
 
-    rows.sort(key=lambda r: r[0])
+    # The header is a cross-check against the hardcoded upstream constants
+    # below, never the authority on its own — a header edited to agree with
+    # wrong rows must not be sufficient to pass.
     errors = []
+    if header_expected_chars != UPSTREAM_CARVE_EXPECTED_CHARS:
+        errors.append(
+            f"{p} header 'expected_chars={header_expected_chars}' disagrees with the "
+            f"hardcoded upstream constant {UPSTREAM_CARVE_EXPECTED_CHARS}"
+        )
+
+    rows.sort(key=lambda r: r[0])
     prev_end = None
     for start, end, chars, dest in rows:
         if end < start:
@@ -822,9 +870,45 @@ def cmd_check_carve(tsv_path_str: str) -> int:
             errors.append(f"gap or overlap between line {prev_end} and line {start} (before {dest!r})")
         prev_end = end
 
+    if rows[0][0] != UPSTREAM_CARVE_START_LINE:
+        errors.append(
+            f"carve starts at line {rows[0][0]}, not the hardcoded upstream start "
+            f"{UPSTREAM_CARVE_START_LINE}"
+        )
+    if rows[-1][1] != UPSTREAM_CARVE_END_LINE:
+        errors.append(
+            f"carve ends at line {rows[-1][1]}, not the hardcoded upstream end "
+            f"{UPSTREAM_CARVE_END_LINE}"
+        )
+
     total_chars = sum(r[2] for r in rows)
-    if total_chars != expected_chars:
-        errors.append(f"row character sum {total_chars} != expected_chars {expected_chars}")
+    if total_chars != UPSTREAM_CARVE_EXPECTED_CHARS:
+        errors.append(
+            f"row character sum {total_chars} != the hardcoded upstream constant "
+            f"{UPSTREAM_CARVE_EXPECTED_CHARS}"
+        )
+
+    # When the upstream source is present on disk, independently re-derive
+    # its line count and character count (same convention: lines
+    # UPSTREAM_CARVE_START_LINE-UPSTREAM_CARVE_END_LINE, each joined by '\n'
+    # plus a trailing '\n', matching `sed -n '7,2400p' | wc -m`) and
+    # cross-check that live measurement against the hardcoded constants too
+    # — if upstream itself has drifted, this port's own carve assumption is
+    # stale, and that should surface here rather than only in a wrong TSV.
+    if UPSTREAM_MOZART_MD.exists():
+        upstream_lines = UPSTREAM_MOZART_MD.read_text(encoding="utf-8").splitlines()
+        if len(upstream_lines) != UPSTREAM_CARVE_END_LINE:
+            errors.append(
+                f"{UPSTREAM_MOZART_MD} has {len(upstream_lines)} lines, not the hardcoded "
+                f"{UPSTREAM_CARVE_END_LINE}"
+            )
+        else:
+            measured = "\n".join(upstream_lines[UPSTREAM_CARVE_START_LINE - 1:UPSTREAM_CARVE_END_LINE]) + "\n"
+            if len(measured) != UPSTREAM_CARVE_EXPECTED_CHARS:
+                errors.append(
+                    f"{UPSTREAM_MOZART_MD} lines {UPSTREAM_CARVE_START_LINE}-{UPSTREAM_CARVE_END_LINE} "
+                    f"measure {len(measured)} chars, not the hardcoded {UPSTREAM_CARVE_EXPECTED_CHARS}"
+                )
 
     for e in errors:
         print(f"FAIL: {e}")

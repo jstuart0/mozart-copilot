@@ -1,9 +1,22 @@
 # The mozart bundle
 
-**Membership contract**: everything under this directory (`.github/mozart/`)
-is read by an agent at runtime and installs with the bundle. Nothing outside
-it is a runtime read. If a file is not under `.github/mozart/`, no
-`.github/agents/*.agent.md` persona may reference it as a path to read.
+**Membership contract, two classes.** Everything under this directory
+(`.github/mozart/`) **installs** with the bundle (`scripts/install-bundle.sh --target`
+copies the whole tree). A file not under `.github/mozart/` never installs
+and no `.github/agents/*.agent.md` persona may reference it as a path to
+read — that half of the contract has no exceptions.
+
+The stronger claim — "read by an agent at runtime" — is true of *most*, not
+all, of what installs. `tests/runtime-reads.tsv` is the actual enumeration:
+every `(agent, path)` citation an agent body makes, generated from the
+personas themselves (`check_agents.py --emit-runtime-reads`). Two files
+install but are never cited by any persona and so never appear in that
+manifest: this file (`README.md` — it's for the human configuring the
+bundle, not for an agent to read) and `config/.gitkeep` (an empty git
+placeholder, not content). Both are installed-but-not-agent-read; everything
+else under this directory that ships is also a genuine runtime read, and
+`--check-install`/`--check-doc-refs` verify that against the manifest, not
+against this file's prose.
 
 ## Single resolution path
 

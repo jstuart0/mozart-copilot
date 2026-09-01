@@ -184,9 +184,8 @@ Dry-run by default; `--apply` writes and backs up every changed file to
 the whole preset, hand-edit `.github/mozart/config/model-map.jsonc` directly,
 then run `apply_models.py --apply` to stamp the roster from it —
 `--check` (drift), `--check-families` (D8), and `--check-tiers` (every
-agent's role matches its upstream Claude-edition tier exactly, except the
-one disclosed `deep-reviewers` upgrade — see `docs/COPILOT_PORT.md`) all
-validate the result before you ship it.
+agent's role matches its upstream Claude-edition tier exactly — see
+`docs/COPILOT_PORT.md`) all validate the result before you ship it.
 
 ## Repo layout
 

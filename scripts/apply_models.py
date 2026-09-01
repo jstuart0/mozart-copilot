@@ -60,12 +60,6 @@ ROLE_TIER = {
 }
 SEBASTIAN_EXEMPT = "sebastian"
 SEBASTIAN_ROLE = "validation"
-# The one disclosed upgrade path (D3; docs/COPILOT_PORT.md's "Model-id
-# string convention"): harry (upstream opus) plus bob/ruby/valerie (upstream
-# sonnet) are all deliberately stamped to this role's opus tier. Every other
-# role must match its members' upstream tier exactly — an upgrade there is
-# just as much an undisclosed retier as a downgrade.
-DEEP_REVIEWERS_ROLE = "deep-reviewers"
 
 
 # --------------------------------------------------------------------------
@@ -165,17 +159,11 @@ def check_tiers(m: dict) -> list:
         if upstream_tier not in TIER_RANK:
             errors.append(f"'{agent}': unknown upstream tier {upstream_tier!r} in upstream-tiers.tsv")
             continue
-        if role == DEEP_REVIEWERS_ROLE:
-            if TIER_RANK[role_tier] < TIER_RANK[upstream_tier]:
-                errors.append(
-                    f"'{agent}' is upstream tier {upstream_tier!r} but role '{role}' is tier {role_tier!r} "
-                    f"— a silent downgrade"
-                )
-        elif TIER_RANK[role_tier] != TIER_RANK[upstream_tier]:
+        if TIER_RANK[role_tier] != TIER_RANK[upstream_tier]:
             verb = "upgrade" if TIER_RANK[role_tier] > TIER_RANK[upstream_tier] else "downgrade"
             errors.append(
                 f"'{agent}' is upstream tier {upstream_tier!r} but role '{role}' is tier {role_tier!r} "
-                f"— a silent {verb}, outside the disclosed '{DEEP_REVIEWERS_ROLE}' exception"
+                f"— a silent {verb}"
             )
 
     sebastian_role = agents_block.get(SEBASTIAN_EXEMPT)
@@ -268,8 +256,9 @@ def compute_diffs(m: dict):
     return diffs, errors
 
 
-def cmd_check() -> int:
-    m, errors = load_map(CANONICAL_MAP)
+def cmd_check(path_str=None) -> int:
+    path = resolve_map_path(path_str)
+    m, errors = load_map(path)
     if errors:
         for e in errors:
             print(f"FAIL: {e}")
@@ -303,6 +292,13 @@ def cmd_stamp(apply: bool, preset: str) -> int:
             for e in struct_errors:
                 print(f"FAIL: preset '{preset}': {e}")
             return 1
+        preset_family_errors = check_families(preset_map)
+        preset_tier_errors = check_tiers(preset_map)
+        if preset_family_errors or preset_tier_errors:
+            for e in preset_family_errors + preset_tier_errors:
+                print(f"FAIL: preset '{preset}': {e}")
+            print(f"refusing to stamp: preset '{preset}' fails validation (see above) — the canonical map is left unchanged")
+            return 1
         if apply:
             shutil.copy2(preset_path, CANONICAL_MAP)
             print(f"copied {preset_path.relative_to(REPO_ROOT)} -> {CANONICAL_MAP.relative_to(REPO_ROOT)}")
@@ -318,6 +314,19 @@ def cmd_stamp(apply: bool, preset: str) -> int:
     if struct_errors:
         for e in struct_errors:
             print(f"FAIL: {e}")
+        return 1
+
+    # Refuse to stamp a map that fails an invariant, whether or not it just
+    # arrived via --preset. Structural validity alone isn't enough — a
+    # structurally-fine preset can still violate D8 (same-family
+    # validation) or silently retier someone; catch both before any
+    # frontmatter write, not after.
+    family_errors = check_families(m)
+    tier_errors = check_tiers(m)
+    if family_errors or tier_errors:
+        for e in family_errors + tier_errors:
+            print(f"FAIL: {e}")
+        print("refusing to stamp: the active map fails validation (see above)")
         return 1
 
     diffs, diff_errors = compute_diffs(m)
@@ -394,19 +403,35 @@ def main(argv=None) -> int:
         print("usage error: --preset and --validate-map are mutually exclusive")
         return 2
 
+    # Every read-only check below composes in one invocation instead of a
+    # first-matching-flag-wins dispatch (the same class of bug as Phase 6's
+    # check_agents.py --map/--min-agents gap, found again here by codex r2).
+    # --validate-map PATH selects which map every one of them runs against;
+    # None means the canonical map.
+    active_map_path = args.validate_map
+    ran_a_check = False
+    exit_code = 0
+
     if args.explain:
-        return cmd_explain(args.validate_map)
+        rc = cmd_explain(active_map_path)
+        if rc != 0:
+            exit_code = 1
+        ran_a_check = True
 
-    if args.validate_map:
-        if not (args.check_families or args.check_tiers):
-            return run_map_checks(args.validate_map, do_families=False, do_tiers=False)
-        return run_map_checks(args.validate_map, args.check_families, args.check_tiers)
-
-    if args.check_families or args.check_tiers:
-        return run_map_checks(None, args.check_families, args.check_tiers)
+    if args.validate_map or args.check_families or args.check_tiers:
+        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers)
+        if rc != 0:
+            exit_code = 1
+        ran_a_check = True
 
     if args.check:
-        return cmd_check()
+        rc = cmd_check(active_map_path)
+        if rc != 0:
+            exit_code = 1
+        ran_a_check = True
+
+    if ran_a_check:
+        return exit_code
 
     return cmd_stamp(apply=args.apply, preset=args.preset)
 

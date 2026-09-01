@@ -8,10 +8,13 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [0.2.0] - 2026-09-01
 
-Global install: one `install-bundle.sh --user-scope --apply` now works
-mozart in any repo on the machine, from the standalone Copilot CLI (via a
-new `mozart` wrapper) and from VS Code (two pasted settings), instead of
-requiring a per-repo `--target` bundle install.
+Global install: one `install-bundle.sh --user-scope --apply` now installs
+and launches mozart for use in any repo on the machine — the standalone
+Copilot CLI via a new `mozart` wrapper, VS Code via two pasted settings —
+instead of requiring a per-repo `--target` bundle install. Installation and
+launch are mechanically verified; live dispatch behavior (subagent grant
+inheritance, `/fleet`) is wired but not yet manually confirmed — see
+`docs/COPILOT_PORT.md`'s "Pending manual verification".
 
 ### Added
 

@@ -19,12 +19,18 @@
 #
 # --user-scope         Full-stack scope (D1): agent definitions, the bundle,
 #                      and the CLI wrapper, all at once, by default.
+#                        .github/mozart/            -> <copilot-home>/mozart/   (written first)
 #                        .github/agents/*.agent.md -> <copilot-home>/agents/
-#                        .github/mozart/            -> <copilot-home>/mozart/
 #                        scripts/mozart              -> <bin-dir>/mozart
 #                      --no-bundle and --no-wrapper opt out of the last two,
 #                      independently and composably; passing both reproduces
 #                      the agents-only install this flag used to mean.
+#                      NOT an atomic operation: the bundle is written before
+#                      the agents/wrapper so that an install interrupted
+#                      partway (disk full, permissions) leaves old agents
+#                      pointing at a new, complete bundle rather than new
+#                      agents pointing at an old or missing one — the safer
+#                      of the two partial states, not a rollback.
 #
 # Copilot-home resolution, highest precedence first (an explicit flag beats
 # ambient environment — see below for why):
@@ -94,16 +100,52 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_VERSION_FILE="$REPO_ROOT/.github/mozart/VERSION"
+# Captured before argument parsing, and never reassigned: the operator's
+# real home, independent of whatever --home overrides HOME_DIR to for test
+# isolation. Needed by is_absurd_root below (codex r2 #2).
+REAL_HOME_AMBIENT="${HOME:-}"
+
+# canon_path P — physically resolve P for blocklist comparison. Walks up to
+# the longest existing ancestor when P itself doesn't exist yet (the normal
+# case: --copilot-home/--bin-dir name a not-yet-created directory), resolves
+# that ancestor with `cd && pwd -P`, then reattaches the not-yet-existing
+# remainder. This is what lets a relative-looking bypass like `/usr/..` or a
+# symlinked ancestor compare correctly against the blocklist below, instead
+# of surviving as a distinct string (codex r2 #2).
+canon_path() {
+  local p="$1" rest="" cur="$1" resolved
+  while [ -n "$cur" ] && [ "$cur" != "/" ] && [ ! -e "$cur" ]; do
+    rest="/$(basename "$cur")$rest"
+    cur="$(dirname "$cur")"
+  done
+  if [ -z "$cur" ]; then
+    printf '%s\n' "$p"
+    return
+  fi
+  resolved="$(cd "$cur" 2>/dev/null && pwd -P)" || { printf '%s\n' "$p"; return; }
+  printf '%s%s\n' "$resolved" "$rest"
+}
 
 # Absurd install roots (xander L2): never let --copilot-home or --bin-dir
 # resolve to one of these — the blast radius of scattering the bundle or the
 # wrapper directly into a system or home root is out of proportion to any
-# plausible intent behind passing it.
+# plausible intent behind passing it. Compared by physical resolution (so
+# `/usr/..` can't survive as a distinct string from `/`) against the REAL
+# ambient $HOME as well as $HOME_DIR (which --home may have overridden to a
+# test fixture) — otherwise `--home <test-dir> --copilot-home "$HOME"` would
+# smuggle the operator's actual home root past a check that only ever looked
+# at the overridden $HOME_DIR (codex r2 #2).
 is_absurd_root() {
-  case "$1" in
-    "/"|"$HOME_DIR"|"/usr"|"/etc") return 0 ;;
-    *) return 1 ;;
-  esac
+  local candidate resolved_root root
+  candidate="$(canon_path "$1")"
+  for root in "/" "$HOME_DIR" "$REAL_HOME_AMBIENT" "/usr" "/etc"; do
+    [ -z "$root" ] && continue
+    resolved_root="$(canon_path "$root")"
+    if [ "$candidate" = "$resolved_root" ]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 usage() {
@@ -407,8 +449,23 @@ if [ "${#COLLISIONS[@]}" -gt 0 ] && [ "$FORCE_CLOBBER" -eq 0 ]; then
 fi
 
 # --------------------------------------------------------------------------
-# Write.
+# Write. Bundle first, agents and the wrapper last (codex r2 #1) — this is
+# a best-effort ordering, not a transaction: nothing here rolls back a
+# partial failure, and no earlier step in this script claims otherwise. If
+# a later step fails partway (disk full, permissions), the ordering decides
+# which half is left in place, and bundle-first is the safer half to lose
+# last: an interrupted install then leaves OLD agent definitions pointing
+# at a NEW, complete bundle. Old agents still resolve every bundle read via
+# the VERSION probe (D7) — stale instructions, but no broken reads. The
+# reverse order (agents-first) would risk the opposite: NEW agent bodies,
+# which may cite bundle content only the new bundle has, left pointing at
+# an old or missing bundle.
 # --------------------------------------------------------------------------
+
+if [ "$NO_BUNDLE" -eq 0 ]; then
+  mkdir -p "$RESOLVED_COPILOT_HOME/mozart"
+  cp -R "$REPO_ROOT"/.github/mozart/. "$RESOLVED_COPILOT_HOME/mozart/"
+fi
 
 mkdir -p "$RESOLVED_COPILOT_HOME/agents"
 if [ "$NO_WRAPPER" -eq 0 ]; then
@@ -419,11 +476,6 @@ for i in "${!DEST_PATHS[@]}"; do
 done
 if [ "$NO_WRAPPER" -eq 0 ]; then
   chmod 0755 "$BIN_DIR/mozart"
-fi
-
-if [ "$NO_BUNDLE" -eq 0 ]; then
-  mkdir -p "$RESOLVED_COPILOT_HOME/mozart"
-  cp -R "$REPO_ROOT"/.github/mozart/. "$RESOLVED_COPILOT_HOME/mozart/"
 fi
 
 # --------------------------------------------------------------------------

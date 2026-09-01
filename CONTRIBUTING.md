@@ -21,13 +21,27 @@ this order:
    who doesn't know the pipeline. ~30–50 words. No jokes.
 2. **Opening paragraph** — who the agent is, what its job is, what it
    explicitly does not do.
-3. **`## Code retrieval`** — opens with the bundle-resolution sentence,
-   verbatim, as its own first paragraph (see any existing specialist's
-   `## Code retrieval` section for the exact wording): `**Bundle
-   resolution.** Every \`.github/mozart\` path below is a citation form:
-   read it from the bundle root your brief names. If no root reads, stop
-   and say so — don't answer from memory.` Then the code-aware-retrieval
-   guidance, copied verbatim from an existing specialist.
+3. **`## Code retrieval`** — the code-aware-retrieval guidance, copied
+   verbatim from an existing specialist.
+   **The bundle-resolution sentence is inserted immediately before the
+   persona's first `.github/mozart/` citation, wherever that citation
+   actually falls** — not tied to any specific heading. For nearly every
+   specialist that citation is the code-aware-retrieval paragraph itself,
+   so in practice the sentence becomes `## Code retrieval`'s own first
+   paragraph, as its own paragraph (one blank line before and after — see
+   any existing specialist for the exact wording and pattern):
+   `**Bundle resolution.** Every \`.github/mozart\` path below is a
+   citation form: read it from the bundle root your brief names. If no
+   root reads, stop and say so — don't answer from memory.`
+   **The one documented exception**: a persona whose own `## Code
+   retrieval` section makes no bundle citation at all — `sebastian`, which
+   works from mozart's pre-computed inputs rather than its own retrieval —
+   gets the sentence immediately before whichever later section makes its
+   actual first citation instead (for `sebastian`, `## Where you fit in
+   mozart's pipeline`, right before its `PIPELINE.md` reference). The rule
+   is "immediately before the first read," never "inside this heading
+   regardless of whether it reads anything" — a sentence placed ahead of
+   a citation-free section guards nothing.
    **D13 — no path-shaped literals**: any bundle path used illustratively
    elsewhere in the body (not as a real citation) must not be path-shaped
    enough to match `BUNDLE_REF_RE` — use the bare directory

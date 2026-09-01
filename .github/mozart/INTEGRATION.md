@@ -73,10 +73,14 @@ Two correct ways to change models, in order of preference:
    repo, then `apply_models.py --apply` to stamp every agent's frontmatter to
    match — but reinstall with
    `scripts/install-bundle.sh --user-scope --apply --force` instead of
-   `--target`. The install is an atomic re-copy of an already-validated
-   pair: the gates run where their build-time inputs exist (the source
-   checkout), not against the installed copy, so nothing needs to re-run
-   `--check` on the just-installed home for the reinstall to be trustworthy.
+   `--target`. The install re-copies an already-validated pair — the bundle
+   is written before the agent definitions, so an install interrupted
+   partway leaves the old agents pointing at the new, complete bundle
+   rather than the reverse (not a transaction — see `install-bundle.sh`'s
+   header for the exact ordering guarantee). The gates run where their
+   build-time inputs exist (the source checkout), not against the installed
+   copy, so nothing needs to re-run `--check` on the just-installed home
+   for the reinstall to be trustworthy.
    To audit an already-installed user-scope home in place — without a
    source checkout, e.g. to confirm it wasn't hand-edited out of sync —
    the single supported spelling is:

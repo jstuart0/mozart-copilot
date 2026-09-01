@@ -1,6 +1,6 @@
 # Counterpoint review (cross-model gate)
 
-Replaces the Claude Code edition's "Codex availability and use" section
+Replaces the Claude Code edition's external-reviewer-availability section
 entirely — not a translation of it. That section was about the mechanics of
 a shelled-out CLI: probing whether a binary was on `PATH`, closing stdin so
 a background process didn't hang forever, arming an OS-level kill-timer,

@@ -29,6 +29,7 @@ sebastian is exempt by name — net-new, no upstream row).
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -47,6 +48,10 @@ from check_agents import (  # noqa: E402
 CANONICAL_MAP = REPO_ROOT / ".github" / "mozart" / "config" / "model-map.jsonc"
 PRESETS_DIR = REPO_ROOT / "config" / "model-maps"
 UPSTREAM_TIERS_TSV = REPO_ROOT / "tests" / "fixtures" / "upstream-tiers.tsv"
+# The r5 DATA cross-check (non-gating) reads this when present; an installed
+# copy of this repo won't have the upstream source checkout, and that's
+# fine — see data_cross_check_readme_vs_frontmatter().
+UPSTREAM_README = Path("/Users/jaystuart/dev/mozart-orchestration/agents/README.md")
 
 TIER_RANK = {"haiku": 0, "sonnet": 1, "opus": 2}
 ROLE_TIER = {
@@ -140,6 +145,33 @@ def load_upstream_tiers() -> dict:
         agent, tier = line.split("\t")
         tiers[agent] = tier
     return tiers
+
+
+def data_cross_check_readme_vs_frontmatter() -> None:
+    """r5's non-gating half. tests/fixtures/upstream-tiers.tsv is
+    transcribed from persona frontmatter, deliberately not from
+    agents/README.md's Model column, because that column is stale for
+    bob/ruby/valerie. This prints one DATA line per disagreement between
+    the two sources so the staleness stays visible instead of silently
+    reappearing the next time someone regenerates the TSV from the README.
+    Never returns errors and never affects the caller's exit code. When the
+    upstream source checkout isn't present (e.g. an installed copy of this
+    bundle, which never ships tests/), prints one DATA line saying the
+    cross-check was skipped rather than doing nothing silently."""
+    if not UPSTREAM_README.exists():
+        print(f"DATA: cross-check skipped — {UPSTREAM_README} not present (expected outside the source checkout)")
+        return
+
+    readme_tiers = {}
+    for line in UPSTREAM_README.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\|\s*(\w[\w-]*)\s*\|.*\|\s*(opus|sonnet|haiku)\s*\|", line)
+        if m:
+            readme_tiers[m.group(1)] = m.group(2)
+
+    frontmatter_tiers = load_upstream_tiers()
+    for agent in sorted(set(readme_tiers) & set(frontmatter_tiers)):
+        if readme_tiers[agent] != frontmatter_tiers[agent]:
+            print(f"DATA {agent}: README={readme_tiers[agent]} frontmatter={frontmatter_tiers[agent]}")
 
 
 def check_tiers(m: dict) -> list:
@@ -369,6 +401,8 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool) -> int:
         all_errors += check_families(m)
     if do_tiers:
         all_errors += check_tiers(m)
+        # Non-gating: never contributes to all_errors / the exit code.
+        data_cross_check_readme_vs_frontmatter()
 
     for e in all_errors:
         print(f"FAIL: {e}")

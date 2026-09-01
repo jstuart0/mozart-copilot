@@ -1,0 +1,28 @@
+# Pipeline state: drifted-codex-legacy-fixture
+
+**Last updated**: 2026-09-01T09:00:00-04:00
+**Status**: in-progress
+**Flow**: FULL
+**Tier**: STANDARD
+**Context**: GREENFIELD
+**Mode**: AUTONOMOUS
+**Build-time flags**: none
+**Authoritative checkout**: /Users/jaystuart/dev/mozart-copilot
+**Current stage**: 5. Codex on plan — COMPLETE (per the checkbox below)
+
+## Paths
+- Plan: /Users/jaystuart/dev/mozart-copilot/.mozart/plans/active/drifted-codex-legacy-fixture.md
+- Codex r1 (plan): not yet run
+
+## Stage progress
+- [x] 1. Intake — 2026-09-01T08:30
+- [x] 3. Plan — 2026-09-01T08:45 — harry
+- [x] 4. Internal review — 2026-09-01T08:55 — bob
+- [x] 5. Codex on plan — 2026-09-01T09:00
+
+## Findings ledger
+| id | stage | lens | severity | disposition | note |
+|----|-------|------|----------|-------------|------|
+
+## Escapes
+- none yet

@@ -385,7 +385,7 @@ Sebastian is a subagent like any other — dispatched via the `agent` tool, brie
 
 ### Cross-family invariant
 
-Before every dispatch, mozart reads `.github/mozart/config/model-map.jsonc` and refuses to proceed if `roles.validation.family == roles.builders.family`. This is a hard stop recorded in the state file, not a soft degradation — unlike the Claude Code edition's "codex isn't installed, degrade gracefully" path, there is no way to run this port's sebastian in a diminished mode. Either the invariant holds and the review runs, or the campaign halts here until the map is fixed or the user explicitly accepts a same-family read.
+Before every dispatch, mozart reads `.github/mozart/config/model-map.jsonc` and refuses to proceed if `roles.validation.family == roles.builders.family`. This is a hard stop recorded in the state file, not a soft degradation — unlike the Claude Code edition's degrade-gracefully-when-the-external-reviewer-is-absent path, there is no way to run this port's sebastian in a diminished mode. Either the invariant holds and the review runs, or the campaign halts here until the map is fixed or the user explicitly accepts a same-family read.
 
 ## Authority boundaries
 

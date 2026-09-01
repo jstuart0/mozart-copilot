@@ -27,7 +27,7 @@ Usage:
     check_agents.py --self-test [--forms]
     check_agents.py --map PATH
     check_agents.py --emit-runtime-reads
-    check_agents.py --check-doc-refs
+    check_agents.py --check-doc-refs [TSV_PATH]
     check_agents.py --check-install DIR
     check_agents.py --check-carve TSV_PATH
     check_agents.py --check-doc-table
@@ -719,13 +719,21 @@ def load_runtime_reads_tsv(path: Path):
     return rows
 
 
-def cmd_check_doc_refs() -> int:
-    if not RUNTIME_READS_TSV.exists():
-        print(f"NOTHING TO CHECK: {RUNTIME_READS_TSV.relative_to(REPO_ROOT)} not found — generated in Phase 5 (step 22)")
+def cmd_check_doc_refs(path_str=None) -> int:
+    if path_str is None:
+        tsv_path = RUNTIME_READS_TSV
+    else:
+        tsv_path = Path(path_str)
+        if not tsv_path.is_absolute():
+            tsv_path = REPO_ROOT / tsv_path
+
+    if not tsv_path.exists():
+        label = tsv_path.relative_to(REPO_ROOT) if tsv_path.is_relative_to(REPO_ROOT) else tsv_path
+        print(f"NOTHING TO CHECK: {label} not found — generated in Phase 5 (step 22)")
         return 2
 
     try:
-        committed = load_runtime_reads_tsv(RUNTIME_READS_TSV)
+        committed = load_runtime_reads_tsv(tsv_path)
     except ValueError as e:
         print(f"FAIL: {e}")
         return 1
@@ -989,7 +997,15 @@ def build_parser():
     p.add_argument("--min-agents", type=int, default=None, help="floor on the .github/agents/ roster size")
     p.add_argument("--map", metavar="PATH", help="cross-check a model-map.jsonc against the agent-file set")
     p.add_argument("--emit-runtime-reads", action="store_true", help="print the (agent, bundle-path) manifest")
-    p.add_argument("--check-doc-refs", action="store_true", help="validate the committed runtime-reads.tsv is fresh")
+    p.add_argument(
+        "--check-doc-refs",
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="TSV_PATH",
+        help="validate a runtime-reads.tsv is fresh (defaults to the committed tests/runtime-reads.tsv; "
+             "pass a path to check a scratch copy instead, e.g. for a staleness bite test)",
+    )
     p.add_argument("--check-install", metavar="DIR", help="validate an installed bundle copy against the manifest")
     p.add_argument("--check-carve", metavar="TSV_PATH", help="validate a coverage-map.tsv is total")
     p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
@@ -1012,7 +1028,8 @@ def main(argv=None) -> int:
     if args.emit_runtime_reads:
         return cmd_emit_runtime_reads()
     if args.check_doc_refs:
-        return cmd_check_doc_refs()
+        path = None if args.check_doc_refs is True else args.check_doc_refs
+        return cmd_check_doc_refs(path)
     if args.check_install:
         return cmd_check_install(args.check_install)
     if args.check_carve:

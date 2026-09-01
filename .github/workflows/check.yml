@@ -62,16 +62,20 @@ jobs:
         run: bash scripts/mozart-lint.sh tests/fixtures/campaign/clean
 
       - name: Lint fixture — drifted-counterpoint is caught
+        # Asserts exit code 1 specifically, not merely non-zero — exit 2
+        # ("nothing to lint") must never read as a caught drift.
         run: |
-          if bash scripts/mozart-lint.sh tests/fixtures/campaign/drifted-counterpoint; then
-            echo "expected exit 1 (drift), got 0" >&2
+          bash scripts/mozart-lint.sh tests/fixtures/campaign/drifted-counterpoint && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "expected exit 1 (drift detected), got $rc" >&2
             exit 1
           fi
 
       - name: Lint fixture — drifted-codex-legacy is caught
         run: |
-          if bash scripts/mozart-lint.sh tests/fixtures/campaign/drifted-codex-legacy; then
-            echo "expected exit 1 (drift), got 0" >&2
+          bash scripts/mozart-lint.sh tests/fixtures/campaign/drifted-codex-legacy && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "expected exit 1 (drift detected), got $rc" >&2
             exit 1
           fi
 

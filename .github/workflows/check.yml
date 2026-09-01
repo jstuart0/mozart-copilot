@@ -38,6 +38,71 @@ jobs:
       - name: Runtime-reads manifest is fresh and resolves in-repo (Phase 5 — step 22; re-added Phase 6 now model-map.jsonc exists)
         run: python3 scripts/check_agents.py --check-doc-refs
 
+      - name: Install-check — fresh repo-scope install passes (Phase 1 — step 4)
+        run: |
+          T="$(mktemp -d)"
+          bash scripts/install-bundle.sh --target "$T" --apply
+          python3 scripts/check_agents.py --check-install "$T" --layout repo
+
+      - name: Install-check — fresh user-scope install passes (Phase 2 — step 10)
+        run: |
+          H="$(mktemp -d)"
+          B="$(mktemp -d)"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply
+          python3 scripts/check_agents.py --check-install "$H/.copilot" --layout user
+
+      - name: Install-check — mid-install failure leaves the documented recovery state (reconciliation r1, codex #1)
+        # The bundle is written before agents/wrapper (install-bundle.sh's
+        # header documents the exact ordering guarantee, not a rollback).
+        # Simulate a write failure after the bundle succeeds by making the
+        # agents directory unwritable first, and assert the documented
+        # partial state: bundle present, agents absent, nonzero exit.
+        run: |
+          H="$(mktemp -d)"
+          B="$(mktemp -d)"
+          mkdir -p "$H/.copilot/agents"
+          chmod 0555 "$H/.copilot/agents"
+          set +e
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply
+          rc=$?
+          set -e
+          chmod 0755 "$H/.copilot/agents"
+          if [ "$rc" -eq 0 ]; then
+            echo "expected a nonzero exit from the simulated write failure" >&2
+            exit 1
+          fi
+          if [ ! -f "$H/.copilot/mozart/VERSION" ]; then
+            echo "bundle should already be installed — it's written before agents" >&2
+            exit 1
+          fi
+          if [ -f "$H/.copilot/agents/mozart.agent.md" ]; then
+            echo "agents should not have been written past the permission failure" >&2
+            exit 1
+          fi
+
+      - name: Install-check — absurd-root blocklist resists bypass forms (reconciliation r1, codex #2)
+        # Two bypasses the pre-reconciliation blocklist missed: (a) --home
+        # pointed at a test fixture while --copilot-home names the REAL
+        # ambient $HOME, which the old check compared against the
+        # overridden $HOME_DIR and never caught; (b) a '/usr/..'-shaped
+        # path, which the old check's literal string compare never
+        # resolved to '/'. Both must now be refused (usage error, exit 2).
+        run: |
+          set +e
+          bash scripts/install-bundle.sh --user-scope --home "$(mktemp -d)" --copilot-home "$HOME" --bin-dir "$(mktemp -d)" --apply
+          rc1=$?
+          bash scripts/install-bundle.sh --user-scope --home "$(mktemp -d)" --copilot-home "/usr/.." --bin-dir "$(mktemp -d)" --apply
+          rc2=$?
+          set -e
+          if [ "$rc1" -ne 2 ]; then
+            echo "expected exit 2 refusing --copilot-home \"\$HOME\", got $rc1" >&2
+            exit 1
+          fi
+          if [ "$rc2" -ne 2 ]; then
+            echo "expected exit 2 refusing --copilot-home '/usr/..', got $rc2" >&2
+            exit 1
+          fi
+
       - name: Model map covers the roster and the allowlist (Phase 6 — step 30)
         run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 22
 

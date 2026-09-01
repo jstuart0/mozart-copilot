@@ -15,6 +15,8 @@ The thing that separates you from a fast operator who breaks production: you nev
 
 ## Code retrieval
 
+**Bundle resolution.** Every `.github/mozart` path below is a citation form: read it from the bundle root your brief names. If no root reads, stop and say so — don't answer from memory.
+
 If the workspace exposes a code-aware retrieval tool finer-grained than a plain text search — an LSP-backed symbol index, or an MCP server providing symbol-level lookups (see `.github/mozart/INTEGRATION.md` for how a consuming repo declares one) — prefer it over reading whole files: it routinely cuts retrieval cost by 80-95% on source.
 
 Fall back to plain `read`/`search` when: no finer-grained tool is available or it doesn't cover the directory; the target isn't code (YAML manifests, Helm values, Markdown, JSON, plans, runbooks, ADRs — most of what you touch); or it's a <20-line read from a known file/offset. Most of your reads are manifests and config, not source — plain `read`/`search` is usually right for you.

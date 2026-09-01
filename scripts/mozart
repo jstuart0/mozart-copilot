@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# scripts/mozart — the CLI wrapper (D6/D9/D10/D12).
+#
+# Carries the grants a bare `copilot` launch doesn't have: the user-scope
+# bundle root(s) via --add-dir, and — inside a git repo — working-directory
+# normalization to the repo root (D9), so mozart's repo-root-relative state
+# model (.mozart/plans/...) and the agent's relative bundle probe both
+# resolve against the repo, not wherever the shell happened to be. Defines
+# zero flags of its own (D6): every argument passes through to `copilot`
+# verbatim after the fixed grants. `COPILOT_HOME` is the only configuration
+# input.
+set -euo pipefail
+
+HOME_DIR="${COPILOT_HOME:-$HOME/.copilot}"
+BUNDLE="$HOME_DIR/mozart"
+DEFAULT="$HOME/.copilot/mozart"
+
+if ! command -v copilot >/dev/null 2>&1; then
+  echo "mozart: 'copilot' is not on your \$PATH — install the Copilot CLI first." >&2
+  exit 127
+fi
+
+# "Not installed" is reported before "not linked" (r3, bob R2): with a
+# custom COPILOT_HOME and nothing installed, checking the symlink contract
+# first would hand the user an `ln -s` that creates a dangling link to a
+# bundle that doesn't exist. Installing is the prerequisite.
+if [ ! -f "$BUNDLE/VERSION" ]; then
+  echo "mozart: no bundle found at $BUNDLE — run 'install-bundle.sh --user-scope --apply' first." >&2
+  exit 1
+fi
+
+ADD_DIRS=(--add-dir "$BUNDLE")
+
+# Custom-home contract (D10), only when the resolved home differs from the
+# default — agents probe $DEFAULT only, so without this a custom-home
+# launch either always halts on a missing bundle, or — worse — silently
+# reads a stale one left over from an earlier default-path install.
+if [ "$BUNDLE" != "$DEFAULT" ]; then
+  if [ -L "$DEFAULT" ]; then
+    # Compare by physical resolution, not the raw symlink target text —
+    # the CLI's own path check may compare paths rather than inodes, but
+    # our *contract* check must not be fooled by a differently-spelled
+    # equivalent path (relative target, extra '..', etc).
+    default_resolved="$(cd "$DEFAULT" 2>/dev/null && pwd -P || true)"
+    bundle_resolved="$(cd "$BUNDLE" 2>/dev/null && pwd -P || true)"
+    if [ -n "$default_resolved" ] && [ "$default_resolved" = "$bundle_resolved" ]; then
+      # Grant both spellings — the CLI's own path check may compare paths
+      # rather than inodes, so the literal $DEFAULT path must be named too.
+      ADD_DIRS+=(--add-dir "$DEFAULT")
+    else
+      echo "mozart: $DEFAULT is a symlink to a stale bundle (not $BUNDLE) — it would shadow the configured one." >&2
+      echo "  remove it and re-link: rm \"$DEFAULT\" && ln -s \"$BUNDLE\" \"$DEFAULT\"" >&2
+      echo "  or unset COPILOT_HOME to use the default bundle instead." >&2
+      exit 1
+    fi
+  elif [ -e "$DEFAULT" ]; then
+    echo "mozart: $DEFAULT already exists as a real directory — a stale bundle that would shadow the configured one ($BUNDLE)." >&2
+    echo "  remove it and re-link: rm -rf \"$DEFAULT\" && ln -s \"$BUNDLE\" \"$DEFAULT\"" >&2
+    echo "  or unset COPILOT_HOME to use the default bundle instead." >&2
+    exit 1
+  else
+    echo "mozart: COPILOT_HOME names a custom home, but $DEFAULT does not exist. Agents probe the default path only — link it:" >&2
+    echo "  mkdir -p \"$(dirname "$DEFAULT")\" && ln -s \"$BUNDLE\" \"$DEFAULT\"" >&2
+    exit 1
+  fi
+fi
+
+# D9: repo-root normalization, compared by physical resolution — git
+# resolves symlinked ancestors (e.g. macOS /tmp -> /private/tmp) in
+# --show-toplevel's output, and $PWD does not, so a raw string compare
+# would announce and `cd` even when already sitting at the repo root.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$ROOT" ] && [ "$ROOT" != "$(pwd -P)" ]; then
+  echo "mozart: running from repo root $ROOT (launched in $PWD)" >&2
+  cd "$ROOT"
+fi
+
+exec copilot --agent mozart "${ADD_DIRS[@]}" "$@"

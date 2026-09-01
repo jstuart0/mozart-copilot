@@ -21,28 +21,55 @@ this order:
    who doesn't know the pipeline. ~30–50 words. No jokes.
 2. **Opening paragraph** — who the agent is, what its job is, what it
    explicitly does not do.
-3. **`## Where you fit in mozart's pipeline`** — the stage marker, a short
+3. **`## Code retrieval`** — the code-aware-retrieval guidance, copied
+   verbatim from an existing specialist.
+   **The bundle-resolution sentence is inserted immediately before the
+   persona's first `.github/mozart/` citation, wherever that citation
+   actually falls** — not tied to any specific heading. For nearly every
+   specialist that citation is the code-aware-retrieval paragraph itself,
+   so in practice the sentence becomes `## Code retrieval`'s own first
+   paragraph, as its own paragraph (one blank line before and after — see
+   any existing specialist for the exact wording and pattern):
+   `**Bundle resolution.** Every \`.github/mozart\` path below is a
+   citation form: read it from the bundle root your brief names. If no
+   root reads, stop and say so — don't answer from memory.`
+   **The one documented exception**: a persona whose own `## Code
+   retrieval` section makes no bundle citation at all — `sebastian`, which
+   works from mozart's pre-computed inputs rather than its own retrieval —
+   gets the sentence immediately before whichever later section makes its
+   actual first citation instead (for `sebastian`, `## Where you fit in
+   mozart's pipeline`, right before its `PIPELINE.md` reference). The rule
+   is "immediately before the first read," never "inside this heading
+   regardless of whether it reads anything" — a sentence placed ahead of
+   a citation-free section guards nothing.
+   **D13 — no path-shaped literals**: any bundle path used illustratively
+   elsewhere in the body (not as a real citation) must not be path-shaped
+   enough to match `BUNDLE_REF_RE` — use the bare directory
+   (`` `.github/mozart` ``), never a trailing-slash-plus-filename shape. A
+   path-shaped illustrative example becomes a phantom manifest row that
+   `--check-doc-refs` then fails on, for a path that was never real.
+4. **`## Where you fit in mozart's pipeline`** — the stage marker, a short
    "Before you / After you" list, triggers, and a "Not your lane" boundary
    statement. Close with: `See the bundled \`.github/mozart/PIPELINE.md\` for
    the full reference.` The marker's form and rules mirror the Claude Code
    edition's contract; this section appears exactly once, ahead of
    `## Field notes`.
-4. **`## Default standard`** — copy the canonical paragraph verbatim from the
+5. **`## Default standard`** — copy the canonical paragraph verbatim from the
    `## Default standard` section of an existing specialist (cite the section,
    never a line range — the range shifts as the file above it grows). This
    paragraph is identical across every specialist.
-5. **`## Core operating principles`** — role-specific principles, as specific
+6. **`## Core operating principles`** — role-specific principles, as specific
    subsections.
-6. **`## Working mode`** — how the agent processes a task end-to-end,
+7. **`## Working mode`** — how the agent processes a task end-to-end,
    numbered steps.
-7. **`## Output format`** — a fenced markdown template for the agent's output
+8. **`## Output format`** — a fenced markdown template for the agent's output
    artifact.
-8. **`## Model attestation`** — copy verbatim from `docs/COPILOT_PORT.md`
+9. **`## Model attestation`** — copy verbatim from `docs/COPILOT_PORT.md`
    once that section exists (Phase 2): begin every response with
    `MODEL-ATTESTATION: <provider>/<model-id>` on its own first line.
-9. **`## Communicate as you work`** — copy this section verbatim from an
-   existing specialist. It is the same in every specialist.
-10. **`## Field notes (append-only)`** — copy the stub from any existing
+10. **`## Communicate as you work`** — copy this section verbatim from an
+    existing specialist. It is the same in every specialist.
+11. **`## Field notes (append-only)`** — copy the stub from any existing
     specialist. Append-only; see `.github/mozart/LEARNINGS.md` for the
     protocol.
 

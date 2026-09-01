@@ -1,5 +1,5 @@
 ---
-name: valid
+name: invalid-user-bundle-file-path
 description: A fixture persona used to validate scripts/check_agents.py.
 tools: [read, search]
 model: gpt-5.4
@@ -7,15 +7,13 @@ agents: []
 user-invocable: false
 ---
 
-# Valid
+# Invalid user bundle file path
 
 Fixture persona body used to validate scripts/check_agents.py. This body exists only to
 exercise the validator and carries no operational instructions.
 
-The user-scope bundle root is `~/.copilot/mozart`, named here as the bare grant target D3
-rule 1 accepts.
+Read `~/.copilot/mozart/manual/INDEX.md` for further instructions.
 
 ## Model attestation
 
 Begin every response with `MODEL-ATTESTATION: <provider>/<model-id>` on its own first line.
-

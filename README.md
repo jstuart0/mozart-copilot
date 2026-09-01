@@ -92,46 +92,75 @@ reviewer's design, and every known quirk (including the subagent
 | surface | status |
 |---|---|
 | VS Code | **supported** — the only runtime this port designs and validates against |
-| Copilot CLI | **loads-but-unvalidated** — agent files are read, the roster appears, `--agent=mozart` runs; whether the dispatch protocol works under `/fleet` is not claimed |
+| Copilot CLI | **loads-but-unvalidated** — the `mozart` wrapper carries the grants automatically (`--add-dir`, repo-root normalization); agent files are read and the roster appears; whether the dispatch protocol works under `/fleet`, and whether a dispatched subagent inherits the wrapper's grant, are pending manual confirmation (see "Pending manual verification" in `docs/COPILOT_PORT.md`) |
 | Cloud coding agent | **out of scope** — ignores `model:`, has no subagent primitive |
 
 ## Install
 
-There are two install modes. Most people only need the first.
-
-**Repo scope (`--target`)** — installs the full bundle into a consuming
-repo: `.github/agents/*.agent.md` and the whole of `.github/mozart/`.
-Nothing from this repo's own `config/`, `tests/`, or `scripts/` is
-installed — those are build-time-only (D14).
-
-```sh
-scripts/install-bundle.sh --target /path/to/your-repo --apply
-```
-
-Dry-run by default (omit `--apply` to preview, writes nothing). Refuses to
-overwrite an already-installed bundle whose `.github/mozart/VERSION` is
-newer than this repo's, unless you pass `--force`.
-
-**User scope (`--user-scope`)** — installs *agent definitions only*, into
-`~/.copilot/agents/` (the verified Copilot CLI harness path). This does
-**not** install the bundle. Every repo you want mozart to orchestrate still
-needs its own `--target` install — an agent installed only at user scope
-halts on its first read and names the missing path. `--user-scope` prints
-this as a warning on every run.
+**One-time, once per machine (`--user-scope`).** Installs the full stack —
+agent definitions, the bundle, and a `mozart` CLI wrapper — into your
+Copilot home, and prints the two settings VS Code needs. Most people only
+need this.
 
 ```sh
 scripts/install-bundle.sh --user-scope --apply
 ```
 
+Dry-run by default (omit `--apply` to preview, writes nothing). Resolves
+your Copilot home from, in order: `--copilot-home <dir>`, `--home <dir>`'s
+`<dir>/.copilot`, `$COPILOT_HOME`, or the default `~/.copilot` — the
+resolved value and which rule produced it are always printed. Refuses
+(`--force` required) to move an installed bundle backwards; refuses
+(`--force-clobber` required) to overwrite a pre-existing wrapper binary or
+agent file that isn't byte-identical to what it would install, so a
+hand-edited or stranger's file on your `PATH` or in `~/.copilot/agents/` is
+never silently discarded. `--no-bundle`/`--no-wrapper` opt out of the
+bundle or the wrapper independently.
+
+**CLI needs zero extra settings — the wrapper carries the grants.** VS Code
+needs two settings, pasted once, printed at the end of every install:
+
+```
+"chat.agentFilesLocations": ["<copilot-home>/agents"]
+"chat.additionalReadAccessFolders": ["<copilot-home>/mozart"]
+```
+
+`chat.agentFilesLocations` is *discovery* — without it, `mozart` never
+appears in the VS Code picker. `chat.additionalReadAccessFolders` is the
+*read* grant. Reload the window after pasting.
+
+**Pin a bundle into one specific repo instead** — vendors a version-locked
+bundle into that repo rather than sharing the machine-wide one:
+
+```sh
+scripts/install-bundle.sh --target /path/to/your-repo --apply
+```
+
+Installs `.github/agents/*.agent.md` and the whole of `.github/mozart/`
+into the target repo; nothing from this repo's own `config/`, `tests/`, or
+`scripts/` is installed (D14). Same downgrade guard as above (`--force` to
+move a pinned bundle backwards). When a repo has its own pinned bundle, it
+wins over the shared user-scope one for any run rooted at that repo's root
+— see Use below.
+
 `--target` and `--user-scope` are mutually exclusive (passing both exits 2).
-See `.github/mozart/INTEGRATION.md` for why there's exactly one bundle
-resolution path and no fallback.
 
 ## Use
 
-In VS Code with Copilot, open the agent picker and select `mozart` (it's the
-only agent that appears there — every specialist is `user-invocable: false`).
-Hand it the task:
+**Copilot CLI** — after the one-time install, from any repo:
+
+```sh
+mozart "add SSO via our IdP to the admin panel"
+mozart -p "audit this repo for tech debt"
+```
+
+The wrapper resolves the git repo root (announcing the move on stderr if it
+had to `cd` there from a subdirectory), grants the bundle, and execs
+`copilot --agent mozart` — no `--add-dir` to type, no settings to paste.
+
+**VS Code** — open the agent picker and select `mozart` (it's the only
+agent that appears there — every specialist is `user-invocable: false`).
+Hand it the task the same way:
 
 ```
 add SSO via our IdP to the admin panel
@@ -140,14 +169,30 @@ investigate why staging queries are slow
 resume the campaign at .mozart/plans/active/<slug>.state.md
 ```
 
-On its first turn, mozart reads `.github/mozart/manual/INDEX.md` (the
-routing table for the rest of the bundle) and then `.github/mozart/manual/INTAKE.md`
-(shape-boundary tests, task tiers, project context) before doing anything
-else — the two mandatory boot reads (D7). It then runs intake (shape, tier,
+**Which bundle wins.** A repo's own `.github/mozart/` (installed via
+`--target`) wins over the shared user-scope bundle whenever the process is
+rooted at that repo's root — the CLI wrapper and VS Code both guarantee
+that; a bare `copilot` launched in a subdirectory does not, and resolves
+the user-scope bundle instead (D7). Mozart reports the resolved root and
+that bundle's `VERSION` in its first narration line, so a stale or
+unexpected bundle is visible immediately rather than inferred from
+behavior.
+
+On its first turn mozart also reads `.github/mozart/manual/INDEX.md` (the
+routing table for the rest of the bundle) and `.github/mozart/manual/INTAKE.md`
+(shape-boundary tests, task tiers, project context) from that resolved
+root — the two mandatory boot reads. It then runs intake (shape, tier,
 mode, slug), creates a state file and a flow sketch, and conducts the
-pipeline, narrating each specialist dispatch so you can follow along. If the
-bundle isn't installed in the workspace, mozart stops and names the missing
-path rather than improvising (D9) — see Install above.
+pipeline, narrating each specialist dispatch so you can follow along. If
+neither bundle candidate resolves, mozart stops and names both rather than
+improvising — see Install above.
+
+**Custom `COPILOT_HOME`.** If you installed with `--copilot-home` (a
+non-default Copilot home), the CLI wrapper enforces a symlink at
+`~/.copilot/mozart` pointing at your configured bundle before every launch
+— the installer prints the exact `ln -s` command, and the wrapper refuses
+with the same remedy if the link is missing or stale. VS Code has no
+equivalent pre-launch hook; the same symlink is the fix there too.
 
 ## Configuring your repo
 
@@ -196,7 +241,7 @@ agent's role matches its upstream Claude-edition tier exactly — see
                            config/model-map.jsonc, VERSION)
 .github/workflows/        CI (check.yml)
 config/                   build-time-only config: toolsets.jsonc, model-maps/
-scripts/                  validator, stamper, install script, lint/metrics
+scripts/                  validator, stamper, install script, CLI wrapper, lint/metrics
 tests/                    fixture corpus + coverage/runtime-read manifests
 docs/                     port rationale and known quirks (COPILOT_PORT.md)
 ```

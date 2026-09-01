@@ -17,15 +17,24 @@ scripts/install-bundle.sh --target /path/to/your-repo --apply
 ```
 
 This copies `.github/agents/*.agent.md` and this entire `.github/mozart/`
-directory into the target repo. **One resolution path, no fallback**: every
-runtime read any agent makes lives under `<workspace>/.github/mozart/` — the
-directory this file is in. If that path is missing from a workspace, an
-agent stops and names it rather than improvising. There is no user-scope or
-search-path fallback for the bundle itself in v1 (`--user-scope` installs
-*agent definitions* only, to `~/.copilot/agents/`, and prints that the
-bundle is still workspace-scoped and must be installed per repo — see
-`docs/COPILOT_PORT.md` for why the two-step form is designed-for-v2 and
-unvalidated, not shipped).
+directory into the target repo — a bundle pinned to this one repo. Every
+runtime read any agent makes resolves once, at boot, against two literal
+candidates in order: this directory (`.github/mozart/`, when the working
+directory is the repo root) and, when that candidate has no `VERSION`, the
+user-scope bundle installed by `scripts/install-bundle.sh --user-scope
+--apply` (`~/.copilot/mozart/`, shared by every repo on the machine). A
+repo pinned this way wins over the shared one whenever the process is
+rooted at this repo's root. If neither candidate resolves, an agent stops
+and names both rather than improvising. See `docs/COPILOT_PORT.md` for the
+full rationale, including the CLI wrapper's repo-root grant (D9) and the
+two-literal-path probe's documented limit (D10).
+
+**Sandboxing.** If your Copilot CLI has local sandboxing enabled (a preview
+feature at time of writing), `--add-dir` widens the file tool's *read*
+scope, but the sandbox is a separate enforcement layer — `~/.copilot/mozart`
+(or your configured custom home's bundle) may need its own explicit read
+policy grant under that sandbox in addition to the wrapper's `--add-dir`.
+Not required while sandboxing stays off (the default today).
 
 `.github/mozart/config/model-map.jsonc` installs with the bundle (it's a
 runtime read — mozart asserts the cross-family invariant from it before

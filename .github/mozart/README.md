@@ -18,15 +18,17 @@ else under this directory that ships is also a genuine runtime read, and
 `--check-install`/`--check-doc-refs` verify that against the manifest, not
 against this file's prose.
 
-## Single resolution path
+## Bundle resolution
 
-Every agent resolves bundle content at exactly one path:
-`<workspace>/.github/mozart/`. There is no fallback and no search order in
-v1 — if the bundle is absent from a workspace, an agent stops and names the
-missing path rather than improvising. See `docs/COPILOT_PORT.md` (from
-Phase 2 onward) for the full rationale, including why a two-step
-`~/.copilot/mozart/` fallback is documented as designed-for-v2 and
-unvalidated rather than shipped as behavior.
+Every agent resolves the bundle root once, at boot, by probing two literal
+candidates in order: `.github/mozart` relative to the working directory,
+then `~/.copilot/mozart` (the user-scope bundle). The first whose `VERSION`
+reads wins, and every file for that run is read from that one root — mixing
+roots (a manual from one, a model map from another) is a silent desync D7
+exists to prevent. If neither candidate's `VERSION` reads, an agent stops
+and names both rather than improvising. See `docs/COPILOT_PORT.md` for the
+full rationale, including the CLI wrapper's repo-root grant (D9) and the
+two-literal-path probe's documented limit (D10).
 
 ## What lives here
 

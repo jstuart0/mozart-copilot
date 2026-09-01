@@ -6,6 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches `1.0.0`. Before that, `0.x` releases may include breaking changes.
 
+## [0.2.0] - 2026-09-01
+
+Global install: one `install-bundle.sh --user-scope --apply` now works
+mozart in any repo on the machine, from the standalone Copilot CLI (via a
+new `mozart` wrapper) and from VS Code (two pasted settings), instead of
+requiring a per-repo `--target` bundle install.
+
+### Added
+
+- `scripts/mozart` — the CLI wrapper. Resolves the Copilot home
+  (`--copilot-home` > `--home`'s `<dir>/.copilot` > `$COPILOT_HOME` >
+  `~/.copilot`), enforces a symlink contract for a non-default home, `cd`s
+  to the git repo root before exec (announced on stderr), and execs
+  `copilot --agent mozart --add-dir <bundle>` — no flags of its own.
+- `scripts/install-bundle.sh --user-scope` full-stack mode: agent
+  definitions, the bundle, and the wrapper, all installed in one pass, with
+  `--no-bundle`/`--no-wrapper` escapes and a printed VS Code paste-block
+  (`chat.agentFilesLocations`, `chat.additionalReadAccessFolders`).
+- `scripts/check_agents.py --check-install --layout {repo,user}` and
+  `apply_models.py --agents-dir` — the same drift/membership checks now run
+  against an installed (out-of-tree) copy, not just the source checkout.
+- `.github/agents/mozart.agent.md`'s `## Bundle resolution` section and the
+  matching one-line resolution sentence in all 21 specialists: the two-step
+  boot probe (workspace bundle, then the user-scope bundle), the
+  first-narration-line root+`VERSION` report, and the halt text naming the
+  exact CLI/VS Code/install remedies.
+
+### Changed
+
+- **`--user-scope` installs the full stack by default** (D1) — agent
+  definitions, the bundle, and the wrapper, not agent definitions alone.
+  The previous default's only reachable outcome was agents that halt on
+  their first read; `--no-bundle`/`--no-wrapper` reproduce the old
+  agents-only behavior explicitly.
+- **The force flags are split by consent question, not by artifact** (D11):
+  `--force` now means only "move an installed bundle backwards"; a new
+  `--force-clobber` is required to overwrite any pre-existing file the
+  installer didn't write and that isn't byte-identical to what it would
+  install — the wrapper binary on `PATH`, or an agent-definitions file
+  sharing a name in the shared `~/.copilot/agents/` namespace. **A
+  hand-edited installed agent now needs `--force-clobber` on the next
+  install** — a hand-modified file is indistinguishable from a stranger's,
+  so it's no longer silently overwritten.
+- **The predecessor's negative gate is retired.** `grep -rn
+  '\.copilot/mozart' .github/agents/` — the blanket ban
+  `find_outside_bundle_violations()` used to enforce — is replaced by D3's
+  three-part rule: the bare user-scope root is a legal grant target, a path
+  component under it is not, and a shell copy of it at command position is
+  not (github/copilot-cli#2173).
+- **`--no-bundle` now refuses unconditionally when a bundle is already
+  installed, with no override flag.** Previously `--no-bundle` would
+  silently leave an older bundle in place while updating agent
+  definitions — precisely the agents/bundle skew the `VERSION` contract
+  exists to prevent. There is no flag to force through this refusal;
+  `install-bundle.sh` prints the two real remedies (drop `--no-bundle`, or
+  remove the installed bundle first). **This is the one change that can
+  turn a previously-working scripted invocation into a hard failure** — a
+  script that ran `--no-bundle` against a machine with any prior bundle
+  install now needs updating.
+
 ## [0.1.0] - 2026-09-01
 
 The complete GitHub Copilot port of the mozart orchestration system: 22

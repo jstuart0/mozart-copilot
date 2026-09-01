@@ -25,16 +25,19 @@ explicit allowlist on the conductor); `agent` in `tools:` if and only if
 `mozart`; a `## Model attestation` marker in the body; the body under the
 30,000-character cap (two-delimiter extractor, character not byte
 semantics); and every path-like reference in the body resolving under
-`.github/mozart/`. See `CONTRIBUTING.md` for the full nine-section authoring
-contract new personas must follow.
+`.github/mozart/`. See `CONTRIBUTING.md` for the full eleven-section
+authoring contract new personas must follow.
 
 ## The bundle path
 
-Every file an agent reads at runtime lives at exactly one path:
-`<workspace>/.github/mozart/`. There is no fallback and no search order. If
-an agent can't find a bundle path it expects, it stops and names the missing
-path rather than improvising — see `.github/mozart/README.md` for the
-membership contract and `docs/COPILOT_PORT.md` for the full rationale.
+Every `.github/mozart` path an agent body cites is a citation form, not a
+fixed location — resolved once at boot against two literal candidates, in
+order: the workspace bundle (`.github/mozart/`, when the working directory
+is the repo root) and, when that candidate has no `VERSION`, the user-scope
+bundle (`~/.copilot/mozart/`). If neither resolves, an agent stops and names
+both candidates rather than improvising — see `.github/mozart/README.md`
+for the membership contract and `docs/COPILOT_PORT.md` for the full
+rationale.
 
 ## How to run the checks
 

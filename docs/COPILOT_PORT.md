@@ -71,30 +71,84 @@ schema but unused in v1:
 | `disable-model-invocation` | no (left at default) | see Invocation policy below |
 | `argument-hint`, `target`, `mcp-servers`, `handoffs`, `hooks` | no | no v1 persona needs them; `mcp-servers` stays unused because this repo is product-neutral (an MCP example lives only as a mapping-table row, never a named server in a `tools:` line) |
 
-## Bundle namespace and the build-time/runtime config split (D9, D14)
+## Bundle resolution and the two supported grants (D7, D9, D10, D14)
 
-**Single resolution path.** Every file any agent reads at runtime lives under
-`<workspace>/.github/mozart/` — one namespace, one path, no fallback, no
-search order in v1. If the bundle is absent from a workspace, an agent stops
-and names the missing path; it does not improvise. `.github/mozart/README.md`
-states the membership contract in one sentence: everything under it is a
-runtime read and installs with the bundle; nothing outside it is.
+**One resolved root per run, probed from two literal candidates** (D7,
+D10). Every agent resolves its bundle root once, at boot, by reading
+`VERSION` under each candidate in order: `.github/mozart` relative to the
+working directory, then `~/.copilot/mozart` (the user-scope bundle). The
+first whose `VERSION` reads wins, and every runtime read for that run comes
+from that one root — mixing roots (a manual from one, a model map from
+another) is exactly the silent desync this rule exists to prevent. Once a
+root wins, a file missing under it is a hard stop, never a reason to try the
+other candidate — a partial bundle is a corrupt install, not something to
+paper over. `.github/mozart/README.md` states the membership contract in
+one sentence: everything under it is a runtime read and installs with the
+bundle; nothing outside it is.
 
-**Why one path and not two.** An earlier revision of this plan added a
-second resolution step — an agent falling back to `~/.copilot/agents/`'s
-sibling `~/.copilot/mozart/` when the workspace bundle is missing. That
-second step depends on a capability this port cannot verify: whether an
-agent's `read`/`search` tools, which VS Code scopes to the current workspace,
-can reach outside it at all. The harness *loading agent definitions* from a
-user-scope directory is a different capability from an *agent's own tool
-calls* reaching outside the workspace, and conflating them would ship a
-fallback that reads as coverage and silently isn't. So v1 ships **one**
-resolution path. `--user-scope` installs agent *definitions* only (the
-verified harness path, `~/.copilot/agents/`) and prints that the bundle
-itself is still workspace-scoped and must be installed per-repo. The
-two-step form is documented here as **designed-for-v2, unvalidated** — Open
-question 2(d) in the campaign plan names validating it as a named follow-up,
-not a promise.
+**Two supported grants, one per surface**, both cited in the conductor's own
+`## Bundle resolution` section:
+
+- **Copilot CLI** (D9) — the `mozart` wrapper (`scripts/mozart`) `cd`s the
+  process to `git rev-parse --show-toplevel` before exec, announcing the
+  move on stderr. This is what makes the *relative* first candidate resolve
+  against the repo root regardless of which subdirectory the wrapper was
+  launched from, and it normalizes mozart's own repo-root-relative state
+  model (`.mozart/plans/...`) onto the same root. It then execs `copilot
+  --agent mozart --add-dir <bundle-root>`, which both widens the file
+  tool's scope to the bundle and loads that directory's `.github/skills`
+  and `.github/agents` as trusted configuration — a documented `--add-dir`
+  behavior, not something the wrapper adds (see D9b below).
+- **VS Code** (D4) — two settings, printed as one paste-block by the
+  installer: `chat.agentFilesLocations` (discovery — makes `mozart` load
+  from `~/.copilot/agents/` at all) and `chat.additionalReadAccessFolders`
+  (reads — widens the workspace read boundary to `~/.copilot/mozart`). The
+  agent's own halt text names only the read setting: a running agent was
+  already discovered, so the discovery setting is undeliverable from inside
+  it and belongs to the installer and README instead.
+
+**Why an agent never reads `$HOME` itself, and a custom `COPILOT_HOME` is a
+wrapper/installer concept, not an agent-side one** (D10). github/copilot-
+cli#2173 tracks the CLI shell tool's present ability to read outside the
+granted scope as an acknowledged gap being closed by local sandboxing — not
+a mechanism this port may depend on. So no agent body ever shells out to
+hunt for the bundle, copies anything into the workspace, or self-bootstraps
+from a home-directory read; `scripts/check_agents.py`'s validator enforces
+this mechanically (a shell copy of the user-scope root at command position
+is a hard fail). For the same reason, an agent's second candidate is always
+the literal `~/.copilot/mozart` — never `$COPILOT_HOME/mozart` — because an
+agent has no tool to evaluate an environment variable it can't read. A
+non-default Copilot home stays usable anyway because the wrapper enforces a
+symlink contract before every launch: `~/.copilot/mozart` must resolve to
+the configured bundle, or the wrapper refuses with an executable one-line
+remedy. **The documented limit**: that enforcement is wrapper-only. VS Code
+with a custom home has no equivalent pre-launch hook — the same symlink is
+the remedy there too, but nothing checks for you that you ran it.
+
+**Roster trust is the CLI's, not the wrapper's** (D9b). Whether the wrapper
+`cd`s into a repo or grants it via `--add-dir`, the CLI loads that repo's
+`.github/agents` as trusted configuration — true of plain `copilot` launched
+there too, not a property the wrapper introduces. Running the wrapper in a
+repository is trusting that repository's configuration, exactly as running
+`copilot` there is: a repo that vendored the suite via `--target` overriding
+user scope is the intended behavior (that's what `--target` is *for*), and
+an unrelated repo shipping a same-named agent file is a documented hazard
+the wrapper cannot mechanically distinguish from it. The mitigation is
+observability, not detection: mozart reports the resolved bundle root and
+its `VERSION` in its first narration line, so an unexpected roster or
+bundle announces itself on line one rather than being inferred from odd
+behavior later.
+
+## Sandboxing
+
+`--add-dir` widens the CLI's *file-tool* scope. Local sandboxing — a preview
+feature at time of writing, expected to become default — is a separate
+enforcement layer this campaign has not verified interacts with `--add-dir`
+the same way. When it does land as default, `~/.copilot/mozart` (and a
+custom home's resolved bundle, when in use) will likely need its own
+explicit read policy grant in addition to the wrapper's `--add-dir` —
+recorded here as an expected follow-up, not implemented, since sandboxing
+isn't default in this window.
 
 **Root-vs-bundle divergence from the Codex CLI edition.** `mozart-codex`
 keeps `INTEGRATION.md` and `PIPELINE.md` at its repo root, because that port
@@ -119,6 +173,15 @@ conductor. `scripts/check_agents.py --check-install` enforces this
 mechanically once the runtime-read manifest exists (Phase 5): every runtime
 read must resolve inside the bundle, and the installed tree must have no
 `config/`, `tests/`, or `scripts/` of its own.
+
+**A third category, added by D8: agent-invoked but never agent-read.**
+`scripts/mozart`, the CLI wrapper, is neither of the two — it installs to
+`<bin-dir>` (not the bundle, not the repo root under `.github/mozart/`) and
+no agent body ever reads it as content; it's a `PATH` entry a human types,
+not a runtime dependency of any persona. `--check-install`'s bundle-
+membership sweep is unaffected: the wrapper was never a bundle-membership
+candidate to begin with, so a reviewer shouldn't read its existence at
+`<bin-dir>/mozart` as a D14 violation.
 
 ## Invocation policy (D10)
 
@@ -159,7 +222,7 @@ where v1 claims support and is documented as not binding elsewhere.
 | surface | status | notes |
 |---|---|---|
 | VS Code | **supported** | the only runtime this port designs and validates against |
-| Copilot CLI | **loads-but-unvalidated** | agent files are read, the roster appears, `--agent=mozart` runs; whether the dispatch protocol works under `/fleet` is not claimed |
+| Copilot CLI | **loads-but-unvalidated** | the `mozart` wrapper carries the grants automatically (`--add-dir`, repo-root normalization, D9); agent files are read and the roster appears; whether the dispatch protocol works under `/fleet`, and whether a dispatched subagent inherits the wrapper's grant (OQ4), are pending manual confirmation — see "Pending manual verification" below |
 | Cloud coding agent | **out of scope** | ignores `model:`, has no subagent primitive; a documented asymmetry, not a v1 target |
 
 `user-invocable` may not bind on the CLI (see Invocation policy). Designing
@@ -544,3 +607,12 @@ mechanically checked, and this port does not claim they've passed:
   the other family, not merely that its `MODEL-ATTESTATION` line claims so
   (see Known quirks — self-reported model identity is a signal, not
   ground truth).
+- **The global-install-cli campaign's own manual checklist (M1–M12)** —
+  CLI command-form acceptance, no-workspace-bundle resolution, the
+  subdirectory-launch `cd`, VS Code discovery vs. reads, workspace-vs-user
+  precedence, the hard-stop-under-a-winning-root case, and, highest-stakes,
+  **whether a dispatched subagent inherits the wrapper's `--add-dir` grant**
+  (M9) — 21 of 22 agents are specialists, so a "no" answer changes how
+  specialist-heavy work should be run. None of these are guessed at here;
+  the campaign plan's Manual section is the authoritative checklist and
+  records the observed answers once run.

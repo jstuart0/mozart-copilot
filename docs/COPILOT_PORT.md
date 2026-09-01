@@ -1,9 +1,9 @@
 # The GitHub Copilot port — mapping, rationale, and known quirks
 
-> v1 (Phase 2). This document is the source of truth for how mozart's Claude
-> Code edition maps onto GitHub Copilot's primitives. It is a build-time
-> reference — it lives at the repo root and is never copied into an installed
-> bundle (D14).
+> v1 (Phase 8 — port complete). This document is the source of truth for how
+> mozart's Claude Code edition maps onto GitHub Copilot's primitives. It is a
+> build-time reference — it lives at the repo root and is never copied into
+> an installed bundle (D14).
 
 ## Verdict
 
@@ -316,12 +316,15 @@ at all (see the campaign plan's fence-aware section map, upstream lines
 
 ## The model map
 
-The canonical active map lands at `.github/mozart/config/model-map.jsonc` in
-Phase 6, stamped by `scripts/apply_models.py`. Seven roles reproduce
-upstream's three model tiers exactly (D3) — five or six roles would silently
-re-tier someone:
+**Headline: `validation` always runs the non-builder model family, and it's
+a hard gate, not a convention.** The canonical active map lives at
+`.github/mozart/config/model-map.jsonc` — read at runtime by mozart before
+every counterpoint dispatch (the family assert) and written at build time by
+`scripts/apply_models.py --apply` (D14, one file two readers). Seven roles
+reproduce upstream's three model tiers exactly (D3) — five or six roles
+would silently re-tier someone:
 
-| role | claude-bulk (this port's initial stamp) | gpt-bulk |
+| role | claude-bulk (shipped active map) | gpt-bulk |
 |---|---|---|
 | `conductor` | Claude Opus 4.5 | GPT-5.4 |
 | `deep-reviewers` | Claude Opus 4.5 | GPT-5.4 |
@@ -331,23 +334,52 @@ re-tier someone:
 | `fast-scan` | Claude Haiku 4.5 | GPT-5.4-mini |
 | `validation` | **GPT-5.4** | **Claude Opus 4.5** |
 
-`validation` is always the non-builder family (D8) — under the `claude-bulk`
-preset this port's builders run on, sebastian (`validation`) runs on GPT-5.4.
+Flip the entire roster's family with one command, and `validation` flips
+with it, in the opposite direction, automatically — that's the whole point
+of shipping the switch as two presets rather than one hand-edited map:
+
+```sh
+python3 scripts/apply_models.py --preset claude-bulk --apply   # 21 builders/reviewers on Anthropic, sebastian on GPT-5.4
+python3 scripts/apply_models.py --preset gpt-bulk --apply      # 21 builders/reviewers on OpenAI,    sebastian on Claude Opus 4.5
+```
+
+`apply_models.py --check-families` exits 1 the moment `roles.validation.family
+== roles.builders.family` — a same-family counterpoint review is a
+contradiction of what sebastian is *for* (D8), so this is enforced as code,
+not left as a documentation warning a preset author could forget.
+
+**The `deep-reviewers` tier exception.** `--check-tiers` asserts every
+agent's role matches its upstream Claude-edition tier *exactly* — an
+undisclosed upgrade is caught the same as an undisclosed downgrade (Phase 6
+found this the hard way: see Implementation notes below). `deep-reviewers`
+is the one disclosed exception. Its four members are `harry` (upstream
+opus — no change), plus `bob`, `ruby`, and `valerie` (upstream sonnet,
+deliberately stamped up to this port's opus tier). That decision was made
+once, in Phase 2's exemplar stamping (`bob`), carried through every
+subsequent phase, and is now the encoded invariant `--check-tiers` protects:
+`deep-reviewers` may sit *at or above* its members' upstream tier; every
+other role must match exactly, in either direction.
 
 **Model-id string convention.** The plan's role table gives human-readable
 model names, not literal API identifiers — those are user-edited and
 conservative-double-sourced by design (Context, "What we're assuming"). This
 port derives a scalar `model:` string mechanically from the display name:
-lowercase, spaces to hyphens (`Claude Sonnet 4.5` → `claude-sonnet-4.5`,
-`GPT-5.4` → `gpt-5.4`). The three Phase 2 exemplars are stamped directly with
-this convention as an interim measure — `apply_models.py` and the canonical
-map (Phase 6) are what make the whole roster's stamping mechanical and
-re-derivable; until then, a persona's `model:` value is this convention
-applied to its D3 role's `claude-bulk` entry.
+lowercase, spaces to hyphens, dot preserved (`Claude Sonnet 4.5` →
+`claude-sonnet-4.5`, `GPT-5.4` → `gpt-5.4`, `GPT-5.3-Codex` →
+`gpt-5.3-codex`). `apply_models.py` validates every role's `model` as shape
+only (a non-empty scalar string) — never membership in a hard-coded ID list
+— so this convention is a stamping default, not a validated constraint; edit
+`.github/mozart/config/model-map.jsonc` directly, or a preset in
+`config/model-maps/`, for your org's actual model policy.
+
+Every role also carries a same-family `fallback`, surfaced by
+`apply_models.py --explain` and never itself stamped into a persona's
+`model:` — for when the primary is org-disabled or deprecated (a real risk:
+global model policy went GA 2026-08-26).
 
 - `jackson` — role `builders` → `claude-sonnet-4.5`
-- `bob` — role `deep-reviewers` → `claude-opus-4.5`
-- `sebastian` — role `validation` → `gpt-5.4`
+- `bob` — role `deep-reviewers` → `claude-opus-4.5` (the tier exception)
+- `sebastian` — role `validation` → `gpt-5.4` (the non-builder family, D8)
 
 ## Model attestation
 
@@ -393,8 +425,98 @@ cap) rather than the roughly 5× the stale estimate would have implied, and
 why the campaign plan treats every body-size claim as a number to
 re-measure, never one to trust from a prior document.
 
+## Measured splits
+
+Three personas needed the fence-aware overflow discipline the plan
+pre-designated, all measured with the same two-delimiter-extractor +
+`wc -m` convention as the upstream figure above:
+
+- **`mozart`** — the conductor. The 2,400-line, 241,189-character upstream
+  body is carved into 14 `manual/` reference files, retained conductor-body
+  sections, and one deliberate deletion (see below). Final measured body:
+  **22,392 characters** — 5% under the 23,589-char target, 25% under the
+  30,000-char hard cap. None of the plan's three pre-designated overflow
+  steps (Consistency lens → `manual/WIRING-SITES.md`; Orchestration
+  discipline split; narration cadence → `manual/NARRATION.md`) were needed.
+- **`scott`** — the technical writer. Two sections moved to persona-private
+  bundle files: `## Pull request authoring` (25,681 chars) →
+  `.github/mozart/agents/scott/PR-AUTHORING.md`, `## Page templates`
+  (2,376 chars) → `.github/mozart/agents/scott/DOC-TEMPLATES.md`. Final
+  measured body: **22,697 characters**. The plan's pre-designated third
+  overflow block (`## External wiki workflow`, 2,610 chars →
+  `EXTERNAL-WIKI.md`) never fired — scott stayed under the warn band with
+  two moves, not three.
+- **`harry`** — the planner. Upstream body measured 28,525 chars, over the
+  27,000-char warn band. The plan's step-18 **headroom guard fired**: the
+  Consistency lens content moved to `.github/mozart/agents/harry/PLAN-TEMPLATE.md`.
+  Final measured body: **26,184 characters**, back under the warn band. This
+  is the one persona whose pre-designated overflow move actually triggered —
+  `tests/runtime-reads.tsv` carries the resulting `harry` ×
+  `agents/harry/PLAN-TEMPLATE.md` row as a real citation, not a hypothetical
+  one (confirmed in the Phase 5 runtime-reads reconciliation).
+
+## Implementation notes
+
+Three check-tool defects were found by exercising the validators against
+real content rather than only the fixture corpus — each is recorded here
+because the fixture corpus alone would not have caught any of them:
+
+1. **Model-map path-stripping (Phase 5).** `find_outside_bundle_violations()`'s
+   `model-map` token cleanup used `.strip("...")`, which removes matching
+   characters from *both* ends — including the meaningful leading `.` in
+   `.github/mozart/config/model-map.jsonc`. Latent since Phase 1; never
+   triggered until `mozart.agent.md` became the first persona to legitimately
+   cite the canonical path. Fixed to `.rstrip(".,;:)")` (trailing prose
+   punctuation only).
+2. **`EVAL.md` basename collision (Phase 5).** The same function assumed
+   every tracked bundle-doc basename has exactly one canonical location.
+   `EVAL.md` legitimately has two — `.github/mozart/EVAL.md` (the
+   ledger/report schema) and `.github/mozart/manual/EVAL.md` (the pipeline
+   procedure), a distinction `manual/INDEX.md` calls out explicitly. Fixed by
+   replacing the single-prefix check with a per-basename set of valid
+   prefixes.
+3. **`--check-install` never re-scanned the installed copy's own agent files
+   (Phase 7).** It only verified that this repo's already-committed
+   `runtime-reads.tsv` rows resolve inside the target directory — a file
+   planted directly into the installed copy's `.github/agents/` (never
+   indexed into this repo's manifest) passed silently. Confirmed
+   experimentally before fixing: planting
+   `tests/fixtures/invalid-outside-bundle-read.agent.md` into a simulated
+   install and re-running `--check-install` returned 0, not the required 1.
+   Fixed by having `cmd_check_install` additionally scan the installed
+   directory's own `.github/agents/*.agent.md` bodies with the existing
+   `find_outside_bundle_violations()`.
+
+Two further corrections, scoped to `apply_models.py` rather than
+`check_agents.py`, from Phase 6: `--map` silently ignored a combined
+`--min-agents` flag because `main()`'s dispatch returned on the first
+matching flag (fixed by threading `min_agents` into `cmd_map` directly); and
+`--check-tiers`'s first design ("no downgrade below upstream tier") was too
+loose to catch an *upward* undisclosed retier, caught by the pre-existing
+`tests/fixtures/map-retiered.jsonc` scaffold's own documented scenario —
+redesigned to the exact-match-except-`deep-reviewers` rule described above.
+
 ## Pending manual verification
+
+Every item below requires a human with Copilot access; none can be
+mechanically checked, and this port does not claim they've passed:
 
 - **`disable-model-invocation` semantics** — not yet confirmed against an
   installed VS Code build (step 11). Carried as a Manual item; see Invocation
   policy above for why nothing ships blocked on it.
+- **Agent picker scope** — open this repo in VS Code with Copilot and
+  confirm only `mozart` appears in the agent picker, and that it dispatches
+  specialists successfully.
+- **Model availability** — confirm every model ID in the active map appears
+  in your org's model picker; enterprise policy can disable models
+  org-wide, and no script can query this.
+- **Real-repo install** — `scripts/install-bundle.sh --target <repo> --apply`
+  into a real work repo, then confirm mozart resolves
+  `.github/mozart/manual/INDEX.md` on its first turn, and that the family
+  assert reads `.github/mozart/config/model-map.jsonc` from the installed
+  copy (not a cached or stale one).
+- **Cross-family validation in practice** — run a TINY DELIVER end-to-end
+  and confirm the model indicator VS Code shows for `sebastian` is actually
+  the other family, not merely that its `MODEL-ATTESTATION` line claims so
+  (see Known quirks — self-reported model identity is a signal, not
+  ground truth).

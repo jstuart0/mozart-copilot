@@ -1,0 +1,120 @@
+# Contributing
+
+Thank you for your interest in improving mozart-copilot. This is the GitHub
+Copilot port of the mozart orchestration system — its behavior lives in
+`.agent.md` persona files under `.github/agents/`, the runtime bundle under
+`.github/mozart/`, and a small set of validation/install scripts under
+`scripts/`. See `.github/mozart/README.md` for the bundle's membership
+contract before touching anything under it.
+
+## Persona authoring contract
+
+Every specialist persona file (`.github/agents/*.agent.md`) must include, in
+this order:
+
+1. **YAML frontmatter** — `name`, `description`, `tools`, `model` (a scalar
+   string, never a YAML sequence), `agents` (`[]` for every specialist; the
+   conductor's allowlist for `mozart`), `user-invocable` (`false` for every
+   specialist; `true` only for `mozart`). The `description` field is what VS
+   Code's agent picker shows for `mozart` (the only user-invocable agent) and
+   what a reader sees when browsing `.github/agents/` — write it for someone
+   who doesn't know the pipeline. ~30–50 words. No jokes.
+2. **Opening paragraph** — who the agent is, what its job is, what it
+   explicitly does not do.
+3. **`## Where you fit in mozart's pipeline`** — the stage marker, a short
+   "Before you / After you" list, triggers, and a "Not your lane" boundary
+   statement. Close with: `See the bundled \`.github/mozart/PIPELINE.md\` for
+   the full reference.` The marker's form and rules mirror the Claude Code
+   edition's contract; this section appears exactly once, ahead of
+   `## Field notes`.
+4. **`## Default standard`** — copy the canonical paragraph verbatim from the
+   `## Default standard` section of an existing specialist (cite the section,
+   never a line range — the range shifts as the file above it grows). This
+   paragraph is identical across every specialist.
+5. **`## Core operating principles`** — role-specific principles, as specific
+   subsections.
+6. **`## Working mode`** — how the agent processes a task end-to-end,
+   numbered steps.
+7. **`## Output format`** — a fenced markdown template for the agent's output
+   artifact.
+8. **`## Model attestation`** — copy verbatim from `docs/COPILOT_PORT.md`
+   once that section exists (Phase 2): begin every response with
+   `MODEL-ATTESTATION: <provider>/<model-id>` on its own first line.
+9. **`## Communicate as you work`** — copy this section verbatim from an
+   existing specialist. It is the same in every specialist.
+10. **`## Field notes (append-only)`** — copy the stub from any existing
+    specialist. Append-only; see `.github/mozart/LEARNINGS.md` for the
+    protocol.
+
+**Voice**: professional and precise. Match the density and tone of
+`.github/agents/mozart.agent.md` and `.github/mozart/INTEGRATION.md`. No
+emojis. No jokey lines.
+
+## When you add a new agent, also update
+
+- `.github/mozart/PIPELINE.md` — add the agent to the Agent roster table and
+  to the appropriate reviewer/specialist trigger table
+- `.github/agents/mozart.agent.md` — add the agent to its `agents:`
+  allowlist (mozart is the only agent that can dispatch a specialist)
+- `.github/mozart/config/model-map.jsonc` — assign the agent a role in the
+  `roles` block (or reuse an existing role) and add it to the `agents` block;
+  then re-stamp with `python3 scripts/apply_models.py --apply`
+- `README.md` — add the agent to the orchestra table and update the agent
+  count
+- `tests/fixtures/upstream-tiers.tsv` (if the agent has an upstream Claude
+  Code counterpart) — record its upstream model tier so
+  `apply_models.py --check-tiers` can verify the port didn't silently retier
+  it
+
+## Local testing
+
+There is no compiled build. "Testing" means running the mechanical gates and
+reading your diff carefully:
+
+```bash
+python3 -m py_compile scripts/check_agents.py
+bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
+python3 scripts/check_agents.py --self-test
+python3 scripts/check_agents.py --min-agents <current roster size>
+```
+
+If you changed a persona's output format, run it against a sample input and
+confirm the output matches the template. If you changed
+`.github/mozart/PIPELINE.md`, verify it stays consistent with
+`.github/agents/mozart.agent.md` (the two must agree on shapes, tiers,
+partial flows, and the agent roster).
+
+## Commit and PR style
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/).
+Common types for this repo:
+
+- `docs(persona):` — editing a persona file
+- `feat(persona):` — new persona or new section in a persona
+- `docs(pipeline):` — changes to `.github/mozart/PIPELINE.md`
+- `docs(integration):` — changes to `.github/mozart/INTEGRATION.md`
+- `chore(ci):` — CI or workflow changes
+- `fix(persona):` — correcting an instruction that causes wrong behavior
+
+## PR checklist
+
+Before opening a pull request, confirm:
+
+- No homelab fingerprints or personal infrastructure references have been
+  introduced — this project is product-neutral
+- Voice is consistent with `.github/agents/mozart.agent.md` and
+  `.github/mozart/INTEGRATION.md` (professional, no emojis)
+- If a new agent was added: `PIPELINE.md`, `mozart.agent.md`'s `agents:`
+  allowlist, `README.md`, and `.github/mozart/config/model-map.jsonc` are all
+  updated
+- `python3 scripts/check_agents.py --self-test` and
+  `python3 scripts/check_agents.py --min-agents <roster size>` both exit 0
+- `CHANGELOG.md` has an entry for the change
+
+## Field-notes protocol
+
+The `## Field notes (append-only)` section at the bottom of each specialist
+persona is an append-only log of cross-project patterns. See
+`.github/mozart/LEARNINGS.md` for the protocol and the entry template. Do not
+edit any other section of a persona file when adding a field note — those
+sections are human-authored contracts.

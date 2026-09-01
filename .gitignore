@@ -1,0 +1,6 @@
+.mozart/
+
+**/.DS_Store
+*.tmp
+*.bak
+.idea/

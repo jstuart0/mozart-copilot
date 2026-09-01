@@ -1,0 +1,16 @@
+// Negative fixture for apply_models.py --validate-map --check-tiers (Phase 6).
+// codebase-locator is upstream haiku (role "fast-scan"); this map silently
+// retiers it up to "builders" (upstream sonnet), which --check-tiers must
+// reject against tests/fixtures/upstream-tiers.tsv.
+{
+  "roles": {
+    "conductor": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" },
+    "builders": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" },
+    "fast-scan": { "model": "claude-haiku-4-5", "family": "anthropic", "fallback": "claude-haiku-4-1" }
+  },
+  "agents": {
+    "mozart": "conductor",
+    "jackson": "builders",
+    "codebase-locator": "builders"
+  }
+}

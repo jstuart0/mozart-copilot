@@ -1,0 +1,14 @@
+// Negative fixture for check_agents.py --map / apply_models.py --validate-map.
+// "phantom-agent" has no corresponding .github/agents/phantom-agent.agent.md —
+// the map's agents block does not cover exactly the agent-file set.
+{
+  "roles": {
+    "conductor": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" },
+    "builders": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" }
+  },
+  "agents": {
+    "mozart": "conductor",
+    "jackson": "builders",
+    "phantom-agent": "builders"
+  }
+}

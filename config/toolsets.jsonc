@@ -1,0 +1,53 @@
+// config/toolsets.jsonc — build-time-only vocabulary for scripts/check_agents.py.
+//
+// Never installed with the bundle (D14) — the validator that reads it runs
+// against this repo's checkout, not an installed copy.
+//
+// Verified live on 2026-09-01 against code.visualstudio.com/docs/agent-
+// customization/custom-agents and the Copilot VS Code features cheat sheet.
+{
+  // Tool sets: coarse-grained capability groups a `tools:` entry may name.
+  "copilot_tool_sets": [
+    "agent",
+    "browser",
+    "edit",
+    "execute",
+    "read",
+    "search",
+    "web",
+    "vscode"
+  ],
+
+  // Standalone tools: individually addressable, not grouped under a set.
+  "copilot_standalone_tools": [
+    "todos",
+    "githubRepo",
+    "githubTextSearch",
+    "selection",
+    "newWorkspace"
+  ],
+
+  // An MCP server's tools are addressed as "<server>/*". Matched by regex,
+  // not enumerated — no product-specific server is named here (this repo
+  // stays product-neutral; MCP is an optional example only).
+  "mcp_wildcard_pattern": "^[A-Za-z0-9_.-]+/\\*$",
+
+  // Claude Code tool noun -> Copilot tool-set/tool mapping. Read by
+  // `check_agents.py --check-doc-table`, which asserts this table agrees
+  // pairwise with the mapping table in docs/COPILOT_PORT.md.
+  "claude_to_copilot": [
+    { "claude": "Read",       "copilot": "read",     "note": "" },
+    { "claude": "Grep",       "copilot": "search",   "note": "search/codebase, search/usages" },
+    { "claude": "Glob",       "copilot": "search",   "note": "search/codebase, search/usages" },
+    { "claude": "LS",         "copilot": "search",   "note": "search/codebase, search/usages" },
+    { "claude": "Edit",       "copilot": "edit",     "note": "" },
+    { "claude": "Write",      "copilot": "edit",     "note": "" },
+    { "claude": "Bash",       "copilot": "execute",  "note": "execute/runInTerminal" },
+    { "claude": "WebFetch",   "copilot": "web",      "note": "web/fetch" },
+    { "claude": "WebSearch",  "copilot": "web",      "note": "web/fetch" },
+    { "claude": "TodoWrite",  "copilot": "todos",    "note": "" },
+    { "claude": "Task",       "copilot": "agent",    "note": "conductor only; requires non-empty agents:" },
+    { "claude": "SendMessage","copilot": null,       "note": "no analog; brief-from-artifacts" },
+    { "claude": "MCP server", "copilot": "<server>/*","note": "optional example only (product-neutral)" }
+  ]
+}

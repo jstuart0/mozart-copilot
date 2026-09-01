@@ -1,0 +1,13 @@
+// Negative fixture for check_agents.py --map / apply_models.py --validate-map.
+// "orphan-role" is defined under roles but never assigned to any agent.
+{
+  "roles": {
+    "conductor": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" },
+    "builders": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" },
+    "orphan-role": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" }
+  },
+  "agents": {
+    "mozart": "conductor",
+    "jackson": "builders"
+  }
+}

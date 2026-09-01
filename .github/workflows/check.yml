@@ -1,0 +1,53 @@
+name: check
+
+# Hardened per the campaign plan's Phase 1 (step 7): push(main) + pull_request
+# only — deliberately never the "_target" variant of the pull_request trigger,
+# which would run untrusted PR code with access to repo secrets. Every action
+# below is pinned to a full commit SHA with the version in a trailing comment
+# (verified live against GitHub's API on 2026-09-01), never a mutable tag.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Parse — check_agents.py compiles
+        run: python3 -m py_compile scripts/check_agents.py
+
+      - name: Parse — shell scripts have valid syntax
+        run: bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
+
+      - name: Validator self-test (fixture corpus)
+        run: python3 scripts/check_agents.py --self-test --forms
+
+      - name: Roster floor (Phase 1 — step 8 owns this at 0; later phases raise it)
+        run: python3 scripts/check_agents.py --min-agents 0
+
+      - name: Lint fixture — clean campaign is clean
+        run: bash scripts/mozart-lint.sh tests/fixtures/campaign/clean
+
+      - name: Lint fixture — drifted-counterpoint is caught
+        run: |
+          if bash scripts/mozart-lint.sh tests/fixtures/campaign/drifted-counterpoint; then
+            echo "expected exit 1 (drift), got 0" >&2
+            exit 1
+          fi
+
+      - name: Lint fixture — drifted-codex-legacy is caught
+        run: |
+          if bash scripts/mozart-lint.sh tests/fixtures/campaign/drifted-codex-legacy; then
+            echo "expected exit 1 (drift), got 0" >&2
+            exit 1
+          fi
+
+      - name: Metrics smoke
+        run: bash scripts/mozart-metrics.sh tests/fixtures/campaign/clean

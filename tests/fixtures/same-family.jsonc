@@ -1,0 +1,16 @@
+// Negative fixture for apply_models.py --validate-map --check-families (Phase 6).
+// D8's cross-family invariant: roles.validation.family must differ from
+// roles.builders.family. Here both are "anthropic" — the reviewer and the
+// builders it audits would share a model family.
+{
+  "roles": {
+    "conductor": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" },
+    "builders": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" },
+    "validation": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" }
+  },
+  "agents": {
+    "mozart": "conductor",
+    "jackson": "builders",
+    "sebastian": "validation"
+  }
+}

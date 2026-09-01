@@ -1,0 +1,904 @@
+#!/usr/bin/env python3
+"""check_agents.py — mechanical validator for mozart-copilot's .agent.md personas.
+
+Python 3, standard library only (D11): bash+jq can't parse JSONC comments and
+a regex-only frontmatter parser desynchronizes from real YAML the first time
+someone writes a block list or a quoted scalar.
+
+Body measurement uses the same two-delimiter extractor and character (not
+byte) semantics as the plan's BODY() shell function:
+
+    awk 'BEGIN{n=0} /^---$/ && n<2 {n++; next} n==2' <file> | LC_ALL=en_US.UTF-8 wc -m
+
+`split_frontmatter()` below reproduces that extractor exactly: the first two
+lines that are *exactly* "---" are delimiters; everything after the second
+delimiter is body, including any further "---" lines. `len()` on the decoded
+UTF-8 body text is `wc -m`'s character count under a UTF-8 locale.
+
+Exit-code contract (shared with mozart-lint.sh / mozart-metrics.sh):
+    0 = clean (WARN allowed)
+    1 = findings
+    2 = nothing to check (a required input file doesn't exist yet — this is
+        not a vacuous pass; a missing prerequisite is reported, not ignored)
+
+Usage:
+    check_agents.py [--min-agents N]
+    check_agents.py --file PATH
+    check_agents.py --self-test [--forms]
+    check_agents.py --map PATH
+    check_agents.py --emit-runtime-reads
+    check_agents.py --check-doc-refs
+    check_agents.py --check-install DIR
+    check_agents.py --check-carve TSV_PATH
+    check_agents.py --check-doc-table
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+AGENTS_DIR = REPO_ROOT / ".github" / "agents"
+BUNDLE_PREFIX = ".github/mozart/"
+TOOLSETS_PATH = REPO_ROOT / "config" / "toolsets.jsonc"
+RUNTIME_READS_TSV = REPO_ROOT / "tests" / "runtime-reads.tsv"
+DOC_PORT_PATH = REPO_ROOT / "docs" / "COPILOT_PORT.md"
+FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
+
+WARN_CHARS = 27000
+FAIL_CHARS = 30000
+
+CANONICAL_MODEL_MAP = ".github/mozart/config/model-map.jsonc"
+BUNDLE_DOC_BASENAMES = ["PIPELINE.md", "LEARNINGS.md", "INTEGRATION.md", "EVAL.md"]
+BUNDLE_REF_RE = re.compile(r"\.github/mozart/[A-Za-z0-9_./-]+")
+
+
+# --------------------------------------------------------------------------
+# JSONC (comments + trailing commas), stdlib only.
+# --------------------------------------------------------------------------
+
+def strip_jsonc_comments(text: str) -> str:
+    out = []
+    i, n = 0, len(text)
+    in_string = False
+    while i < n:
+        c = text[i]
+        if in_string:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            i = n if j == -1 else j + 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def load_jsonc(path: Path):
+    text = path.read_text(encoding="utf-8")
+    stripped = strip_jsonc_comments(text)
+    stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+    return json.loads(stripped)
+
+
+# --------------------------------------------------------------------------
+# Frontmatter: the two-delimiter extractor + a minimal YAML-subset parser.
+# --------------------------------------------------------------------------
+
+class FrontmatterError(Exception):
+    pass
+
+
+def split_frontmatter(text: str):
+    """Return (fm_lines, body_text). Raises FrontmatterError on a missing or
+    unclosed opening/closing '---' pair — never a partial parse."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    if not lines or lines[0] != "---":
+        raise FrontmatterError("missing opening '---' delimiter on line 1")
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i] == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        raise FrontmatterError("unclosed frontmatter: no closing '---' delimiter found")
+    fm_lines = lines[1:end_idx]
+    body_lines = lines[end_idx + 1:]
+    body_text = "".join(l + "\n" for l in body_lines)
+    return fm_lines, body_text
+
+
+def strip_yaml_comment(line: str) -> str:
+    in_single = in_double = False
+    for i, ch in enumerate(line):
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            if i == 0 or line[i - 1].isspace():
+                return line[:i].rstrip()
+    return line.rstrip()
+
+
+def parse_yaml_scalar(s: str):
+    s = s.strip()
+    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+        return s[1:-1]
+    return s
+
+
+def parse_inline_list(s: str):
+    s = s.strip()
+    assert s.startswith("[") and s.endswith("]")
+    inner = s[1:-1].strip()
+    if not inner:
+        return []
+    return [parse_yaml_scalar(x) for x in inner.split(",")]
+
+
+def parse_frontmatter(fm_lines):
+    """Minimal top-level YAML mapping parser: bare/quoted scalars, inline
+    lists ([a, b]), block lists (- item), trailing '# comment' stripping.
+    Returns (data: dict, kinds: dict[str, 'scalar'|'list'])."""
+    data, kinds = {}, {}
+    i, n = 0, len(fm_lines)
+    while i < n:
+        raw = fm_lines[i]
+        line = strip_yaml_comment(raw)
+        if not line.strip():
+            i += 1
+            continue
+        if line.strip().startswith("- "):
+            raise FrontmatterError(f"unexpected list item with no preceding key: {raw!r}")
+        if ":" not in line:
+            raise FrontmatterError(f"malformed frontmatter line (no ':'): {raw!r}")
+        key, _, rest = line.partition(":")
+        key = key.strip()
+        rest = rest.strip()
+        if rest == "":
+            block_items = []
+            j = i + 1
+            while j < n:
+                nxt_raw = fm_lines[j]
+                nxt = strip_yaml_comment(nxt_raw)
+                if nxt.strip() == "":
+                    j += 1
+                    continue
+                indent = len(nxt_raw) - len(nxt_raw.lstrip(" "))
+                stripped = nxt.strip()
+                if stripped.startswith("- ") and indent > 0:
+                    block_items.append(parse_yaml_scalar(stripped[2:]))
+                    j += 1
+                    continue
+                break
+            if block_items:
+                data[key] = block_items
+                kinds[key] = "list"
+            else:
+                data[key] = ""
+                kinds[key] = "scalar"
+            i = j
+            continue
+        if rest.startswith("["):
+            data[key] = parse_inline_list(rest)
+            kinds[key] = "list"
+        else:
+            data[key] = parse_yaml_scalar(rest)
+            kinds[key] = "scalar"
+        i += 1
+    return data, kinds
+
+
+# --------------------------------------------------------------------------
+# Toolset vocabulary.
+# --------------------------------------------------------------------------
+
+def load_toolset_vocab():
+    if not TOOLSETS_PATH.exists():
+        raise FileNotFoundError(f"{TOOLSETS_PATH} not found — required by every check")
+    data = load_jsonc(TOOLSETS_PATH)
+    vocab = set(data.get("copilot_tool_sets", [])) | set(data.get("copilot_standalone_tools", []))
+    wildcard_re = re.compile(data.get("mcp_wildcard_pattern", r"^[A-Za-z0-9_.-]+/\*$"))
+    return vocab, wildcard_re
+
+
+def is_valid_tool(tool: str, vocab, wildcard_re) -> bool:
+    return tool in vocab or bool(wildcard_re.match(tool))
+
+
+# --------------------------------------------------------------------------
+# Bundle-path references (D9 / D14 / P8).
+# --------------------------------------------------------------------------
+
+def find_bundle_refs(body_text: str):
+    refs = set()
+    for m in BUNDLE_REF_RE.finditer(body_text):
+        token = m.group(0).rstrip(".,;:)`'\"")
+        refs.add(token)
+    return refs
+
+
+def find_outside_bundle_violations(body_text: str):
+    violations = set()
+    if ".copilot/mozart" in body_text:
+        violations.add(
+            "references the retired user-scope fallback '~/.copilot/mozart' "
+            "(unvalidated — v1 has no fallback; see D9)"
+        )
+    if re.search(r"(^|[^/])docs/manual/", body_text):
+        violations.add(
+            "references the retired r0 path 'docs/manual/' "
+            "(manual docs live under .github/mozart/manual/)"
+        )
+    for m in re.finditer(r"[\w./~-]*model-map[\w./-]*", body_text):
+        token = m.group(0).strip("`'\".,()")
+        if token != CANONICAL_MODEL_MAP:
+            violations.add(
+                f"references 'model-map' outside the canonical bundle path "
+                f"({token!r} != {CANONICAL_MODEL_MAP!r})"
+            )
+    for name in BUNDLE_DOC_BASENAMES:
+        for m in re.finditer(re.escape(name), body_text):
+            start = m.start()
+            prefix = body_text[max(0, start - len(BUNDLE_PREFIX)):start]
+            if prefix != BUNDLE_PREFIX:
+                violations.add(f"references '{name}' without the '.github/mozart/' bundle prefix")
+    return sorted(violations)
+
+
+# --------------------------------------------------------------------------
+# Single-file validation.
+# --------------------------------------------------------------------------
+
+@dataclass
+class ValidationResult:
+    path: Path
+    ok: bool = True
+    errors: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    data: dict = field(default_factory=dict)
+    kinds: dict = field(default_factory=dict)
+    body_chars: int = 0
+
+
+def agent_stem(path: Path) -> str:
+    name = path.name
+    if name.endswith(".agent.md"):
+        return name[: -len(".agent.md")]
+    return path.stem
+
+
+def validate_agent_file(path: Path) -> ValidationResult:
+    result = ValidationResult(path=path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        result.ok = False
+        result.errors.append(f"could not read file: {e}")
+        return result
+
+    try:
+        fm_lines, body_text = split_frontmatter(text)
+    except FrontmatterError as e:
+        result.ok = False
+        result.errors.append(str(e))
+        return result
+
+    try:
+        data, kinds = parse_frontmatter(fm_lines)
+    except FrontmatterError as e:
+        result.ok = False
+        result.errors.append(f"frontmatter parse error: {e}")
+        return result
+
+    result.data = data
+    result.kinds = kinds
+    result.body_chars = len(body_text)
+
+    stem = agent_stem(path)
+    errors = result.errors
+
+    # name == filename stem
+    name = data.get("name")
+    if not name:
+        errors.append("frontmatter 'name' is missing or empty")
+    elif name != stem:
+        errors.append(f"frontmatter name {name!r} does not match filename stem {stem!r}")
+
+    # description present and non-empty
+    description = data.get("description")
+    if not description or (isinstance(description, str) and not description.strip()):
+        errors.append("frontmatter 'description' is missing or empty")
+
+    # tools: present, non-empty list, every entry in the vocabulary
+    tools = None
+    if "tools" not in data:
+        errors.append("frontmatter 'tools' is missing")
+    elif kinds.get("tools") != "list":
+        errors.append("frontmatter 'tools' must be a YAML list")
+    elif not data["tools"]:
+        errors.append("frontmatter 'tools' is present but empty")
+    else:
+        tools = data["tools"]
+        try:
+            vocab, wildcard_re = load_toolset_vocab()
+        except FileNotFoundError as e:
+            errors.append(str(e))
+            vocab, wildcard_re = set(), re.compile(r"$^")
+        for t in tools:
+            if not is_valid_tool(t, vocab, wildcard_re):
+                errors.append(f"tools entry {t!r} is not a member of config/toolsets.jsonc")
+
+    # model: present, scalar string, explicit failure on a YAML sequence
+    if "model" not in data:
+        errors.append("frontmatter 'model' is missing")
+    elif kinds.get("model") == "list":
+        errors.append(
+            "frontmatter 'model' is a YAML sequence, not a scalar string "
+            "(github/copilot-cli#2133 — subagent model: silently falls back to the parent's)"
+        )
+    elif not data["model"]:
+        errors.append("frontmatter 'model' is present but empty")
+
+    # agents: present as a list ([] for every non-conductor)
+    agents_list = None
+    if "agents" not in data:
+        errors.append("frontmatter 'agents' is missing (use '[]' for a non-conductor specialist)")
+    elif kinds.get("agents") != "list":
+        errors.append("frontmatter 'agents' must be a YAML list ('[]' when empty)")
+    else:
+        agents_list = data["agents"]
+
+    # user-invocable: present, boolean scalar
+    user_invocable = None
+    if "user-invocable" not in data:
+        errors.append("frontmatter 'user-invocable' is missing")
+    elif kinds.get("user-invocable") != "scalar" or data["user-invocable"] not in ("true", "false"):
+        errors.append("frontmatter 'user-invocable' must be the scalar 'true' or 'false'")
+    else:
+        user_invocable = data["user-invocable"] == "true"
+        result.data["user-invocable"] = user_invocable  # normalize to bool for callers
+
+    # agent ∈ tools iff agents non-empty — both directions
+    if tools is not None and agents_list is not None:
+        agent_in_tools = "agent" in tools
+        agents_nonempty = len(agents_list) > 0
+        if agents_nonempty and not agent_in_tools:
+            errors.append(
+                "frontmatter 'agents' is non-empty but 'agent' is not in 'tools' "
+                "(dispatch requires the agent tool)"
+            )
+        if agent_in_tools and not agents_nonempty:
+            errors.append(
+                "'agent' is in 'tools' but frontmatter 'agents' is empty "
+                "(the agent tool is granted but nothing is dispatchable)"
+            )
+
+    # only mozart may be user-invocable: true (D10)
+    if user_invocable is True and stem != "mozart":
+        errors.append("frontmatter 'user-invocable: true' is set, but only 'mozart' may be user-invocable")
+
+    # MODEL-ATTESTATION marker present
+    if "MODEL-ATTESTATION" not in body_text:
+        errors.append("body has no 'MODEL-ATTESTATION' marker")
+
+    # body size cap / warn band (two-delimiter extractor, character semantics)
+    if result.body_chars > FAIL_CHARS:
+        errors.append(f"body is {result.body_chars} chars, exceeds the {FAIL_CHARS}-char cap")
+    elif result.body_chars > WARN_CHARS:
+        result.warnings.append(
+            f"body is {result.body_chars} chars (WARN band: > {WARN_CHARS}, cap {FAIL_CHARS})"
+        )
+
+    # every path-like reference resolves under .github/mozart/
+    for v in find_outside_bundle_violations(body_text):
+        errors.append(v)
+
+    result.ok = len(errors) == 0
+    return result
+
+
+# --------------------------------------------------------------------------
+# --self-test
+# --------------------------------------------------------------------------
+
+def run_self_test(forms: bool) -> int:
+    ok = True
+
+    def check_accept(p: Path, expect_warn: bool = False) -> bool:
+        nonlocal ok
+        if not p.exists():
+            print(f"MISSING fixture: {p.relative_to(REPO_ROOT)}")
+            ok = False
+            return False
+        r = validate_agent_file(p)
+        if not r.ok:
+            print(f"FAIL (expected ACCEPT): {p.relative_to(REPO_ROOT)} — {'; '.join(r.errors)}")
+            ok = False
+            return False
+        if expect_warn and not r.warnings:
+            print(f"FAIL (expected WARN): {p.relative_to(REPO_ROOT)} — accepted with no warning")
+            ok = False
+            return False
+        tag = " (WARN)" if r.warnings else ""
+        print(f"accept: {p.relative_to(REPO_ROOT)}{tag}")
+        return True
+
+    def check_reject(p: Path) -> bool:
+        nonlocal ok
+        if not p.exists():
+            print(f"MISSING fixture: {p.relative_to(REPO_ROOT)}")
+            ok = False
+            return False
+        r = validate_agent_file(p)
+        if r.ok:
+            print(f"FAIL (expected REJECT): {p.relative_to(REPO_ROOT)} — validator accepted it")
+            ok = False
+            return False
+        print(f"reject: {p.relative_to(REPO_ROOT)} — {'; '.join(r.errors)}")
+        return True
+
+    check_accept(FIXTURES_DIR / "valid.agent.md")
+    check_accept(FIXTURES_DIR / "warn-band.agent.md", expect_warn=True)
+
+    invalid_fixtures = sorted(FIXTURES_DIR.glob("invalid-*.agent.md"))
+    if not invalid_fixtures:
+        print("FAIL: no tests/fixtures/invalid-*.agent.md fixtures found")
+        ok = False
+    for p in invalid_fixtures:
+        check_reject(p)
+
+    if forms:
+        forms_dir = FIXTURES_DIR / "forms"
+        form_fixtures = sorted(forms_dir.glob("*.agent.md")) if forms_dir.exists() else []
+        if not form_fixtures:
+            print("FAIL: no tests/fixtures/forms/*.agent.md fixtures found")
+            ok = False
+        for p in form_fixtures:
+            check_accept(p)
+        # unclosed '---' rejected — reuses the shared negative fixture
+        check_reject(FIXTURES_DIR / "invalid-unclosed-frontmatter.agent.md")
+
+    print(f"\nself-test: {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
+
+
+# --------------------------------------------------------------------------
+# --file
+# --------------------------------------------------------------------------
+
+def cmd_file(path_str: str) -> int:
+    p = Path(path_str)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    r = validate_agent_file(p)
+    for w in r.warnings:
+        print(f"WARN {p}: {w}")
+    for e in r.errors:
+        print(f"FAIL {p}: {e}")
+    if r.ok:
+        print(f"OK {p}")
+        return 0
+    return 1
+
+
+# --------------------------------------------------------------------------
+# Default: validate the whole .github/agents/ roster.
+# --------------------------------------------------------------------------
+
+def discover_agent_files():
+    if not AGENTS_DIR.exists():
+        return []
+    return sorted(AGENTS_DIR.glob("*.agent.md"))
+
+
+def cmd_validate_all(min_agents) -> int:
+    files = discover_agent_files()
+    any_fail = False
+    invocable_true = []
+
+    for f in files:
+        r = validate_agent_file(f)
+        rel = f.relative_to(REPO_ROOT)
+        for w in r.warnings:
+            print(f"WARN {rel}: {w}")
+        for e in r.errors:
+            print(f"FAIL {rel}: {e}")
+        if not r.ok:
+            any_fail = True
+        if r.data.get("user-invocable") is True:
+            invocable_true.append(f)
+
+    if len(invocable_true) > 1:
+        names = ", ".join(f.name for f in invocable_true)
+        print(f"FAIL roster: more than one agent is user-invocable: true: {names}")
+        any_fail = True
+
+    if min_agents is not None and len(files) < min_agents:
+        print(f"FAIL roster: {len(files)} agent file(s) found under .github/agents/, --min-agents requires >= {min_agents}")
+        any_fail = True
+
+    print(f"\nvalidated {len(files)} agent file(s) under .github/agents/")
+    return 1 if any_fail else 0
+
+
+# --------------------------------------------------------------------------
+# --map
+# --------------------------------------------------------------------------
+
+def cmd_map(path_str: str) -> int:
+    p = Path(path_str)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    if not p.exists():
+        print(f"NOTHING TO CHECK: map file not found at {p}")
+        return 2
+
+    try:
+        m = load_jsonc(p)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"FAIL: could not parse {p} as JSONC: {e}")
+        return 1
+
+    errors = []
+    roles = m.get("roles")
+    agents_block = m.get("agents")
+    if not isinstance(roles, dict):
+        errors.append("map is missing a 'roles' object")
+        roles = {}
+    if not isinstance(agents_block, dict):
+        errors.append("map is missing an 'agents' object")
+        agents_block = {}
+
+    used_roles = set(agents_block.values())
+    for role in roles:
+        if role not in used_roles:
+            errors.append(f"role '{role}' is defined but assigned to no agent (orphan role)")
+    for agent_name, role in agents_block.items():
+        if role not in roles:
+            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
+
+    discovered = {agent_stem(f) for f in discover_agent_files()}
+    map_agents = set(agents_block.keys())
+    for missing in sorted(discovered - map_agents):
+        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
+    for extra in sorted(map_agents - discovered):
+        errors.append(f"map assigns a role to '{extra}' but no .github/agents/{extra}.agent.md exists")
+
+    for f in discover_agent_files():
+        stem = agent_stem(f)
+        role = agents_block.get(stem)
+        if role is None or role not in roles:
+            continue
+        r = validate_agent_file(f)
+        role_model = roles[role].get("model") if isinstance(roles[role], dict) else None
+        file_model = r.data.get("model")
+        if role_model is not None and file_model is not None and role_model != file_model:
+            errors.append(
+                f"'{stem}' is stamped model {file_model!r} but its role '{role}' maps to {role_model!r}"
+            )
+
+    mozart_file = AGENTS_DIR / "mozart.agent.md"
+    if mozart_file.exists():
+        r = validate_agent_file(mozart_file)
+        mozart_agents = set(r.data.get("agents") or [])
+        specialists = discovered - {"mozart"}
+        missing_from_allowlist = specialists - mozart_agents
+        extra_in_allowlist = mozart_agents - specialists
+        for a in sorted(missing_from_allowlist):
+            errors.append(f"'{a}' is a specialist file but is missing from mozart's agents: allowlist")
+        for a in sorted(extra_in_allowlist):
+            errors.append(f"mozart's agents: allowlist names '{a}', which is not a specialist file")
+
+    for e in errors:
+        print(f"FAIL: {e}")
+    return 1 if errors else 0
+
+
+# --------------------------------------------------------------------------
+# --emit-runtime-reads
+# --------------------------------------------------------------------------
+
+def emit_runtime_reads_rows():
+    rows = []
+    for f in discover_agent_files():
+        stem = agent_stem(f)
+        try:
+            text = f.read_text(encoding="utf-8")
+            _, body_text = split_frontmatter(text)
+        except FrontmatterError:
+            continue
+        for ref in sorted(find_bundle_refs(body_text)):
+            rows.append((stem, ref))
+    return sorted(set(rows))
+
+
+def cmd_emit_runtime_reads() -> int:
+    for agent, ref in emit_runtime_reads_rows():
+        print(f"{agent}\t{ref}")
+    return 0
+
+
+# --------------------------------------------------------------------------
+# --check-doc-refs
+# --------------------------------------------------------------------------
+
+def load_runtime_reads_tsv(path: Path):
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != 2:
+            raise ValueError(f"malformed row (expected 2 tab-separated fields): {line!r}")
+        rows.append((parts[0], parts[1]))
+    return rows
+
+
+def cmd_check_doc_refs() -> int:
+    if not RUNTIME_READS_TSV.exists():
+        print(f"NOTHING TO CHECK: {RUNTIME_READS_TSV.relative_to(REPO_ROOT)} not found — generated in Phase 5 (step 22)")
+        return 2
+
+    try:
+        committed = load_runtime_reads_tsv(RUNTIME_READS_TSV)
+    except ValueError as e:
+        print(f"FAIL: {e}")
+        return 1
+
+    fresh = emit_runtime_reads_rows()
+    committed_set, fresh_set = set(committed), set(fresh)
+
+    errors = []
+    for agent, ref in sorted(committed_set - fresh_set):
+        errors.append(f"stale row (no longer emitted): {agent}\t{ref}")
+    for agent, ref in sorted(fresh_set - committed_set):
+        errors.append(f"missing row (emitted but not committed): {agent}\t{ref}")
+    for agent, ref in committed:
+        if not (REPO_ROOT / ref).exists():
+            errors.append(f"row resolves to a path that does not exist in this repo: {agent}\t{ref}")
+
+    for e in errors:
+        print(f"FAIL: {e}")
+    return 1 if errors else 0
+
+
+# --------------------------------------------------------------------------
+# --check-install
+# --------------------------------------------------------------------------
+
+def cmd_check_install(dir_str: str) -> int:
+    if not RUNTIME_READS_TSV.exists():
+        print(f"NOTHING TO CHECK: {RUNTIME_READS_TSV.relative_to(REPO_ROOT)} not found — generated in Phase 5 (step 22)")
+        return 2
+
+    install_dir = Path(dir_str)
+    if not install_dir.is_absolute():
+        install_dir = REPO_ROOT / install_dir
+    if not install_dir.exists():
+        print(f"NOTHING TO CHECK: installed directory not found at {install_dir}")
+        return 2
+
+    try:
+        rows = load_runtime_reads_tsv(RUNTIME_READS_TSV)
+    except ValueError as e:
+        print(f"FAIL: {e}")
+        return 1
+
+    errors = []
+    for agent, ref in rows:
+        if ref.startswith(".mozart/"):
+            errors.append(f"manifest row points under .mozart/ (campaign artifact, must never enter the bundle manifest): {agent}\t{ref}")
+            continue
+        if not ref.startswith(BUNDLE_PREFIX):
+            errors.append(f"manifest row resolves outside the bundle: {agent}\t{ref}")
+            continue
+        if not (install_dir / ref).exists():
+            errors.append(f"row not found in installed copy: {agent}\t{ref}")
+
+    for e in errors:
+        print(f"FAIL: {e}")
+    return 1 if errors else 0
+
+
+# --------------------------------------------------------------------------
+# --check-carve
+#
+# tests/coverage-map.tsv format (created Phase 5, step 21): a TSV with
+# optional leading '#'-comment lines, one of which must be
+# "# expected_chars=<N>", followed by data rows
+#   start_line<TAB>end_line<TAB>chars<TAB>destination
+# (1-based, inclusive line ranges, both ends inclusive). The union of ranges
+# must be contiguous with no gap and no overlap, and the sum of the 'chars'
+# column must equal <N>.
+# --------------------------------------------------------------------------
+
+def cmd_check_carve(tsv_path_str: str) -> int:
+    p = Path(tsv_path_str)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    if not p.exists():
+        print(f"NOTHING TO CHECK: coverage-map.tsv not found at {p} — created in Phase 5 (step 21)")
+        return 2
+
+    expected_chars = None
+    rows = []
+    for lineno, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        if line.lstrip().startswith("#"):
+            m = re.match(r"#\s*expected_chars\s*=\s*(\d+)", line.strip())
+            if m:
+                expected_chars = int(m.group(1))
+            continue
+        parts = line.split("\t")
+        if len(parts) != 4:
+            print(f"FAIL: {p}:{lineno}: expected 4 tab-separated fields (start,end,chars,destination), got {len(parts)}")
+            return 1
+        try:
+            start, end, chars = int(parts[0]), int(parts[1]), int(parts[2])
+        except ValueError:
+            print(f"FAIL: {p}:{lineno}: start/end/chars must be integers: {line!r}")
+            return 1
+        rows.append((start, end, chars, parts[3]))
+
+    if not rows:
+        print(f"FAIL: {p} has no data rows")
+        return 1
+    if expected_chars is None:
+        print(f"FAIL: {p} has no '# expected_chars=<N>' header — cannot verify the checksum")
+        return 1
+
+    rows.sort(key=lambda r: r[0])
+    errors = []
+    prev_end = None
+    for start, end, chars, dest in rows:
+        if end < start:
+            errors.append(f"row {dest!r}: end {end} < start {start}")
+        if prev_end is not None and start != prev_end + 1:
+            errors.append(f"gap or overlap between line {prev_end} and line {start} (before {dest!r})")
+        prev_end = end
+
+    total_chars = sum(r[2] for r in rows)
+    if total_chars != expected_chars:
+        errors.append(f"row character sum {total_chars} != expected_chars {expected_chars}")
+
+    for e in errors:
+        print(f"FAIL: {e}")
+    if not errors:
+        print(f"carve is total: lines {rows[0][0]}-{rows[-1][1]}, {total_chars} chars across {len(rows)} row(s)")
+    return 1 if errors else 0
+
+
+# --------------------------------------------------------------------------
+# --check-doc-table
+# --------------------------------------------------------------------------
+
+def extract_doc_mapping_table(doc_text: str):
+    """Find the primitive-mapping table in docs/COPILOT_PORT.md: the first
+    pipe-table whose header row contains both 'Claude' and 'Copilot'."""
+    lines = doc_text.splitlines()
+    rows = []
+    in_table = False
+    for line in lines:
+        stripped = line.strip()
+        if not in_table:
+            if stripped.startswith("|") and "claude" in stripped.lower() and "copilot" in stripped.lower():
+                in_table = True
+            continue
+        if not stripped.startswith("|"):
+            break
+        if re.match(r"^\|[\s:-]+\|", stripped):
+            continue  # separator row
+        cells = [c.strip().strip("`") for c in stripped.strip("|").split("|")]
+        if len(cells) >= 2:
+            rows.append((cells[0], cells[1]))
+    return rows
+
+
+def cmd_check_doc_table() -> int:
+    if not DOC_PORT_PATH.exists():
+        print(f"NOTHING TO CHECK: {DOC_PORT_PATH.relative_to(REPO_ROOT)} not found — created in Phase 2 (step 9)")
+        return 2
+    if not TOOLSETS_PATH.exists():
+        print(f"NOTHING TO CHECK: {TOOLSETS_PATH.relative_to(REPO_ROOT)} not found")
+        return 2
+
+    toolsets = load_jsonc(TOOLSETS_PATH)
+    vocab_pairs = {
+        (row["claude"], row["copilot"] if row["copilot"] is not None else "(no analog)")
+        for row in toolsets.get("claude_to_copilot", [])
+    }
+
+    doc_text = DOC_PORT_PATH.read_text(encoding="utf-8")
+    doc_pairs = set(extract_doc_mapping_table(doc_text))
+
+    if not doc_pairs:
+        print(f"FAIL: no Claude/Copilot mapping table found in {DOC_PORT_PATH.relative_to(REPO_ROOT)}")
+        return 1
+
+    missing_in_doc = vocab_pairs - doc_pairs
+    extra_in_doc = doc_pairs - vocab_pairs
+    errors = []
+    for pair in sorted(missing_in_doc):
+        errors.append(f"config/toolsets.jsonc has {pair} but docs/COPILOT_PORT.md's table does not")
+    for pair in sorted(extra_in_doc):
+        errors.append(f"docs/COPILOT_PORT.md's table has {pair} but config/toolsets.jsonc does not")
+
+    for e in errors:
+        print(f"FAIL: {e}")
+    return 1 if errors else 0
+
+
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
+
+def build_parser():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--file", metavar="PATH", help="validate a single agent file")
+    p.add_argument("--self-test", action="store_true", help="run the fixture corpus")
+    p.add_argument("--forms", action="store_true", help="with --self-test: also check the frontmatter-form fixtures")
+    p.add_argument("--min-agents", type=int, default=None, help="floor on the .github/agents/ roster size")
+    p.add_argument("--map", metavar="PATH", help="cross-check a model-map.jsonc against the agent-file set")
+    p.add_argument("--emit-runtime-reads", action="store_true", help="print the (agent, bundle-path) manifest")
+    p.add_argument("--check-doc-refs", action="store_true", help="validate the committed runtime-reads.tsv is fresh")
+    p.add_argument("--check-install", metavar="DIR", help="validate an installed bundle copy against the manifest")
+    p.add_argument("--check-carve", metavar="TSV_PATH", help="validate a coverage-map.tsv is total")
+    p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
+    return p
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if args.forms and not args.self_test:
+        print("usage error: --forms requires --self-test")
+        return 2
+
+    if args.self_test:
+        return run_self_test(args.forms)
+    if args.file:
+        return cmd_file(args.file)
+    if args.map:
+        return cmd_map(args.map)
+    if args.emit_runtime_reads:
+        return cmd_emit_runtime_reads()
+    if args.check_doc_refs:
+        return cmd_check_doc_refs()
+    if args.check_install:
+        return cmd_check_install(args.check_install)
+    if args.check_carve:
+        return cmd_check_carve(args.check_carve)
+    if args.check_doc_table:
+        return cmd_check_doc_table()
+    return cmd_validate_all(args.min_agents)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

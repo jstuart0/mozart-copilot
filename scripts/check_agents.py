@@ -1187,7 +1187,14 @@ def build_parser():
         help="with --check-install: 'repo' (default, .github/agents + .github/mozart) or "
              "'user' (agents/ + mozart/, the Copilot CLI user-scope shape)",
     )
-    p.add_argument("--check-carve", metavar="TSV_PATH", help="validate a coverage-map.tsv is total")
+    p.add_argument(
+        "--check-carve",
+        nargs="?",
+        const="tests/coverage-map.tsv",
+        default=None,
+        metavar="TSV_PATH",
+        help="validate a coverage-map.tsv is total (defaults to tests/coverage-map.tsv)",
+    )
     p.add_argument(
         "--upstream-mozart-md",
         metavar="PATH",
@@ -1199,31 +1206,104 @@ def build_parser():
     return p
 
 
+def reduce_statuses(statuses) -> int:
+    """Reduce several action exit codes to one by fixed PRIORITY: 1 > 2 > 0.
+
+    A genuine failure (1) always surfaces, even when another action in the same
+    invocation returned a benign "nothing to check" (2); a 2 in turn outranks a
+    clean 0. This is check_agents.py's own vocabulary (cmd_map returns 2 for a
+    missing map file) — see main()'s docstring for why it has no counterpart in
+    apply_models.py."""
+    if 1 in statuses:
+        return 1
+    if 2 in statuses:
+        return 2
+    return 0
+
+
 def main(argv=None) -> int:
+    """Aggregating CLI dispatcher.
+
+    Every requested action is collected in parser-declaration order, ALL of
+    them run, and their exit codes are reduced by reduce_statuses() using a
+    fixed priority: 1 (real failure) outranks 2 (nothing-to-check / misuse)
+    outranks 0 (clean). This replaces the previous first-matching-flag-wins
+    chain, in which a second action flag was silently dropped — so a CI step
+    could pass while the check its author intended never ran (H1).
+
+    The priority rule is DELIBERATELY NOT shared with apply_models.py. The two
+    scripts speak different exit vocabularies: check_agents.py uses 0/1/2
+    (cmd_map returns 2 on a missing map file), apply_models.py is strictly 0/1.
+    Folding both under one reducer would force apply_models.py to reason about a
+    "2" it never emits. The rule is therefore new local logic, not convergence;
+    a shared dispatcher is deferred until a third caller earns the seam (W5).
+
+    --emit-runtime-reads is mutually exclusive with every other action (W7a):
+    its stdout is redirected verbatim into tests/runtime-reads.tsv, whose header
+    forbids hand edits, so interleaving any banner or diagnostic line into that
+    stream would silently corrupt the generated file. Combined with any other
+    action it exits 2 before anything runs, and when it is the sole action it
+    prints no banner so the TSV stays pristine."""
     args = build_parser().parse_args(argv)
 
     if args.forms and not args.self_test:
         print("usage error: --forms requires --self-test")
         return 2
 
-    if args.self_test:
-        return run_self_test(args.forms)
-    if args.file:
-        return cmd_file(args.file)
-    if args.map:
-        return cmd_map(args.map, args.min_agents)
+    # --emit-runtime-reads exclusivity (W7a) — checked before any action runs.
     if args.emit_runtime_reads:
+        conflicts = [
+            name for name, present in (
+                ("--self-test", args.self_test),
+                ("--file", args.file),
+                ("--map", args.map),
+                ("--check-doc-refs", args.check_doc_refs),
+                ("--check-install", args.check_install),
+                ("--check-carve", args.check_carve),
+                ("--check-doc-table", args.check_doc_table),
+            ) if present
+        ]
+        if conflicts:
+            print(
+                "usage error: --emit-runtime-reads is mutually exclusive with "
+                f"{', '.join(conflicts)} — its stdout is consumed verbatim as "
+                "tests/runtime-reads.tsv and must not be interleaved with other output"
+            )
+            return 2
+        # Sole action: no banner, pristine TSV on stdout.
         return cmd_emit_runtime_reads()
+
+    # Collect the requested actions in parser-declaration order. Each entry is
+    # (label, thunk); the label is printed as a banner so the aggregated output
+    # attributes each block of lines to the action that produced it.
+    actions = []
+    if args.self_test:
+        actions.append(("self-test", lambda: run_self_test(args.forms)))
+    if args.file:
+        actions.append(("file", lambda: cmd_file(args.file)))
+    if args.map:
+        actions.append(("map", lambda: cmd_map(args.map, args.min_agents)))
     if args.check_doc_refs:
-        path = None if args.check_doc_refs is True else args.check_doc_refs
-        return cmd_check_doc_refs(path)
+        doc_refs_path = None if args.check_doc_refs is True else args.check_doc_refs
+        actions.append(("check-doc-refs", lambda: cmd_check_doc_refs(doc_refs_path)))
     if args.check_install:
-        return cmd_check_install(args.check_install, args.layout)
+        actions.append(("check-install", lambda: cmd_check_install(args.check_install, args.layout)))
     if args.check_carve:
-        return cmd_check_carve(args.check_carve, resolve_upstream_mozart_md(args.upstream_mozart_md))
+        actions.append((
+            "check-carve",
+            lambda: cmd_check_carve(args.check_carve, resolve_upstream_mozart_md(args.upstream_mozart_md)),
+        ))
     if args.check_doc_table:
-        return cmd_check_doc_table()
-    return cmd_validate_all(args.min_agents)
+        actions.append(("check-doc-table", lambda: cmd_check_doc_table()))
+
+    if not actions:
+        return cmd_validate_all(args.min_agents)
+
+    statuses = []
+    for label, thunk in actions:
+        print(f"== {label} ==")
+        statuses.append(thunk())
+    return reduce_statuses(statuses)
 
 
 if __name__ == "__main__":

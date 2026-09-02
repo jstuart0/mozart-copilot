@@ -279,6 +279,166 @@ jobs:
           if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing a '..' escape, got $rc" >&2; cat out2.txt; exit 1; fi
           grep -qE "('\\.\\.'|not absolute|not normalized|component)" out2.txt || { echo "missing non-normalized refusal" >&2; cat out2.txt; exit 1; }
 
+      - name: Uninstall — a parent swapped for a symlink AFTER install deletes nothing outside the namespace (sebastian HIGH-2 r2)
+        # HIGH-2 r2: the Pass-1 namespace test is LEXICAL, so replacing
+        # <copilot-home>/agents (or the wrapper's bin dir) with a symlink after
+        # install redirected a recorded, checksum-matching path OUT of the owned
+        # namespace and the old code deleted it. Pass 2 now physically resolves
+        # each candidate's parent and refuses a symlinked parent. Exercise BOTH
+        # the agents dir and the wrapper. W7b: exact refusal substring + the
+        # attacker-controlled file must survive.
+        run: |
+          # (a) agents dir swapped for a symlink to an attacker dir.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          one="$(ls "$CH/agents" | head -1)"
+          evil="$(mktemp -d)"; cp "$CH/agents/$one" "$evil/$one"
+          mv "$CH/agents" "$H/agents.real"
+          ln -s "$evil" "$CH/agents"
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "expected exit 0 (skip, not fatal), got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'parent directory is a symlink' out.txt || { echo "missing symlinked-parent refusal for agents" >&2; cat out.txt; exit 1; }
+          [ -e "$evil/$one" ] || { echo "attacker file under the symlinked agents dir was DELETED — containment failed" >&2; exit 1; }
+          # (b) wrapper bin dir swapped for a symlink to an attacker dir.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          evil2="$(mktemp -d)"; cp "$B/mozart" "$evil2/mozart"
+          rm -rf "$B"; ln -s "$evil2" "$B"
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out2.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "expected exit 0 (skip, not fatal), got $rc" >&2; cat out2.txt; exit 1; fi
+          grep -qF 'parent directory is a symlink' out2.txt || { echo "missing symlinked-parent refusal for wrapper" >&2; cat out2.txt; exit 1; }
+          [ -e "$evil2/mozart" ] || { echo "attacker wrapper under the symlinked bin dir was DELETED — containment failed" >&2; exit 1; }
+
+      - name: Uninstall — MED-A — a failing hash utility skips (never fatally aborts) with entries still deletable (sebastian MED-A)
+        # MED-A: `cur="$(sha256_of "$path")"` was unguarded under set -euo
+        # pipefail, so a failing hash utility exited at the assignment — after
+        # earlier entries were already deleted — despite the header claiming
+        # hash failures are skipped. Now `|| cur=""`; every entry falls into the
+        # documented "modified since install" skip. Stub BOTH hash utilities to
+        # fail on PATH and assert exit 0, no deletions, files intact.
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          before=$(ls "$CH/agents" | wc -l | tr -d ' ')
+          STUB="$(mktemp -d)"
+          printf '#!/bin/sh\nexit 3\n' > "$STUB/sha256sum"; printf '#!/bin/sh\nexit 3\n' > "$STUB/shasum"
+          chmod +x "$STUB/sha256sum" "$STUB/shasum"
+          PATH="$STUB:$PATH" COPILOT_HOME="$CH" bash scripts/uninstall.sh > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "a failing hash utility aborted the uninstall (expected exit 0), got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'modified since install' out.txt || { echo "missing the documented skip message" >&2; cat out.txt; exit 1; }
+          removed=$(grep -c '^removed:' out.txt)
+          if [ "$removed" -ne 0 ]; then echo "a hash failure still deleted $removed file(s)" >&2; cat out.txt; exit 1; fi
+          after=$(ls "$CH/agents" | wc -l | tr -d ' ')
+          if [ "$after" -ne "$before" ]; then echo "agents count changed under a failing hash ($before -> $after)" >&2; exit 1; fi
+          [ -e "$B/mozart" ] || { echo "wrapper deleted under a failing hash" >&2; exit 1; }
+
+      - name: Install-check — MED-A — a failing sha256 refuses with the diagnostic, not a bare abort (sebastian MED-A)
+        # MED-A (installer twin): `sum="$(sha256_of "$p")"` in write_manifest was
+        # unguarded, so a failing hash utility exited at the assignment BEFORE
+        # the explicit "could not compute sha256" refusal — and by then artifacts
+        # were already copied. Now `|| sum=""`. Assert the documented refusal.
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"
+          STUB="$(mktemp -d)"
+          printf '#!/bin/sh\nexit 3\n' > "$STUB/sha256sum"; printf '#!/bin/sh\nexit 3\n' > "$STUB/shasum"
+          chmod +x "$STUB/sha256sum" "$STUB/shasum"
+          PATH="$STUB:$PATH" bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 2 ]; then echo "expected exit 2 for an uncomputable sha256, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'could not compute sha256' out.txt || { echo "missing the sha256-refusal diagnostic" >&2; cat out.txt; exit 1; }
+
+      - name: Install-check — MED-B — installed agent files are world-readable 0644, the wrapper 0755 (sebastian MED-B)
+        # MED-B: the HIGH-5 secure temp-copy created each temp 0600, and both BSD
+        # and GNU `cp` retain the existing destination mode — so agent files
+        # landed 0600 and became unreadable to other users of a shared checkout.
+        # The intended mode is now set on the temp before the rename. Assert
+        # modes for BOTH install scopes.
+        run: |
+          # user-scope: agents 0644, wrapper 0755.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          for f in "$CH"/agents/*.agent.md; do
+            m=$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f")
+            if [ "$m" != "644" ]; then echo "agent $f has mode $m, expected 644" >&2; exit 1; fi
+          done
+          m=$(stat -c '%a' "$B/mozart" 2>/dev/null || stat -f '%Lp' "$B/mozart")
+          if [ "$m" != "755" ]; then echo "wrapper has mode $m, expected 755" >&2; exit 1; fi
+          # repo-scope (--target): agents 0644.
+          T="$(mktemp -d)"; mkdir -p "$T/.github"
+          bash scripts/install-bundle.sh --target "$T" --apply >/dev/null 2>&1
+          for f in "$T"/.github/agents/*.agent.md; do
+            m=$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f")
+            if [ "$m" != "644" ]; then echo "target agent $f has mode $m, expected 644" >&2; exit 1; fi
+          done
+
+      - name: Install-check — HIGH-3 r2 — a TRAILING-newline install root is refused (bash strips it from \$( )) (sebastian HIGH-3)
+        # HIGH-3 r2: bash strips ALL trailing newlines from command substitution,
+        # INCLUDING newlines that are part of the directory name — so a target
+        # named "/tmp/victim<newline>" validated and recorded "/tmp/victim",
+        # trusting a DIFFERENT repo. The r1 test used an INTERIOR newline and
+        # missed this. Physical capture now uses a printf-X sentinel; assert one
+        # AND multiple trailing newlines are caught by the control-char check.
+        run: |
+          # one trailing newline.
+          W="$(mktemp -d)"; nl="$(printf '\nird')"; nl="${nl%ird}"
+          tdir="$W/victim${nl}"; mkdir -p "$tdir/.github"
+          CH="$(mktemp -d)/.copilot"; mkdir -p "$CH"
+          COPILOT_HOME="$CH" bash scripts/install-bundle.sh --target "$tdir" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing a trailing-newline root, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'control character' out.txt || { echo "missing control-char refusal for one trailing newline" >&2; cat out.txt; exit 1; }
+          [ -e "$CH/mozart-trust/roots" ] && { echo "trust roots written despite the refusal" >&2; exit 1; } || true
+          # multiple trailing newlines.
+          W2="$(mktemp -d)"; tdir2="$W2/victim${nl}${nl}"; mkdir -p "$tdir2/.github"
+          CH2="$(mktemp -d)/.copilot"; mkdir -p "$CH2"
+          COPILOT_HOME="$CH2" bash scripts/install-bundle.sh --target "$tdir2" --apply > out2.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing multiple trailing newlines, got $rc" >&2; cat out2.txt; exit 1; fi
+          grep -qF 'control character' out2.txt || { echo "missing control-char refusal for multiple trailing newlines" >&2; cat out2.txt; exit 1; }
+          # positive control: a clean root still records with no false refusal.
+          W3="$(mktemp -d)"; tdir3="$W3/normalrepo"; mkdir -p "$tdir3/.github"
+          CH3="$(mktemp -d)/.copilot"; mkdir -p "$CH3"
+          COPILOT_HOME="$CH3" bash scripts/install-bundle.sh --target "$tdir3" --apply > out3.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "a clean root was wrongly refused, got $rc" >&2; cat out3.txt; exit 1; fi
+          grep -q '^/' "$CH3/mozart-trust/roots" || { echo "clean root not recorded absolute" >&2; cat "$CH3/mozart-trust/roots" >&2; exit 1; }
+
+      - name: Install-check — HIGH-4 r2 — wrong-TYPE state nodes are refused before any mutation, both branches (sebastian HIGH-4)
+        # HIGH-4 r2: the r1 preflight checked only for symlinks (+ unreadable
+        # manifest). A REGULAR FILE at mozart-trust, or a DIRECTORY at
+        # mozart-manifest.txt / mozart-trust/roots / mozart-trust/wrapper-paths,
+        # passed preflight and failed (or silently mis-`mv`ed) AFTER mutation.
+        # Preflight now rejects the exact wrong node type before any write.
+        run: |
+          # (1) --target: regular file at mozart-trust -> refuse, no agents dir.
+          SB="$(mktemp -d)"; CH="$SB/.copilot"; mkdir -p "$CH"; : > "$CH/mozart-trust"
+          T="$SB/repo"; mkdir -p "$T/.github"
+          COPILOT_HOME="$CH" bash scripts/install-bundle.sh --target "$T" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "[target/trust-file] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'is not a directory' out.txt || { echo "[target/trust-file] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
+          [ -d "$T/.github/agents" ] && { echo "[target/trust-file] agents mutated before refusal" >&2; exit 1; } || true
+          # (2) --user-scope: DIRECTORY at the manifest path -> refuse, nothing written.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH/mozart-manifest.txt"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "[user/manifest-dir] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'is not a regular file' out.txt || { echo "[user/manifest-dir] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
+          [ -e "$CH/mozart/VERSION" ] && { echo "[user/manifest-dir] bundle mutated before refusal" >&2; exit 1; } || true
+          [ -e "$B/mozart" ] && { echo "[user/manifest-dir] wrapper mutated before refusal" >&2; exit 1; } || true
+          # (3) --user-scope: regular file at mozart-trust -> refuse, no agents dir.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH"; : > "$CH/mozart-trust"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "[user/trust-file] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'is not a directory' out.txt || { echo "[user/trust-file] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
+          [ -d "$CH/agents" ] && { echo "[user/trust-file] agents mutated before refusal" >&2; exit 1; } || true
+          # (4) --user-scope: DIRECTORY at mozart-trust/roots -> refuse.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH/mozart-trust/roots"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "[user/roots-dir] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'is not a regular file' out.txt || { echo "[user/roots-dir] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
+          [ -d "$CH/agents" ] && { echo "[user/roots-dir] agents mutated before refusal" >&2; exit 1; } || true
+          # (5) --user-scope: DIRECTORY at mozart-trust/wrapper-paths -> refuse.
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH/mozart-trust/wrapper-paths"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "[user/wrapper-dir] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'is not a regular file' out.txt || { echo "[user/wrapper-dir] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
+          [ -e "$B/mozart" ] && { echo "[user/wrapper-dir] wrapper mutated before refusal" >&2; exit 1; } || true
+
       - name: Uninstall — README block is byte-identical to scripts/uninstall.sh
         # The README ships a self-contained copy of the uninstall so a user
         # whose checkout is gone can still run it. Enforce that the documented
@@ -535,6 +695,24 @@ jobs:
           out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 22 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "--map should still consume --agents-dir (expected exit 1), got $rc — $out" >&2; exit 1; fi
           printf '%s\n' "$out" | grep -qF 'tests/fixtures/roster-floor-agents' || { echo "--map did not walk the overridden roster — $out" >&2; exit 1; }
+
+      - name: Modifier matrix — apply_models.py --agents-dir is rejected by the actions that never consume it (sebastian MED-C)
+        # MED-C: apply_models.py rejected --agents-dir only with --apply. Supplied
+        # ALONE, with --preset, or with --explain it reached paths that never
+        # consume active_agents_dir — the same silently-ignored-modifier defect
+        # (H1's class) as Z7 in the other CLI. It is now rejected (exit 2) unless
+        # at least one consuming action (--check / --validate-map /
+        # --check-families / --check-tiers) is present. Prove all three inert
+        # combos are rejected AND a consuming action still accepts it.
+        run: |
+          D="$(mktemp -d)"
+          for combo in "--agents-dir $D" "--preset balanced --agents-dir $D" "--explain --agents-dir $D"; do
+            out=$(python3 scripts/apply_models.py $combo 2>&1) && rc=0 || rc=$?
+            if [ "$rc" -ne 2 ]; then echo "expected exit 2 for [$combo], got $rc — $out" >&2; exit 1; fi
+            printf '%s\n' "$out" | grep -qF -- '--agents-dir' || { echo "message does not name --agents-dir for [$combo] — $out" >&2; exit 1; }
+          done
+          out=$(python3 scripts/apply_models.py --check --agents-dir .github/agents 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "--check should still consume --agents-dir (expected exit 0), got $rc — $out" >&2; exit 1; fi
 
       - name: Live-model-ID gate bites through all read entry points and refuses at the write path (Phase P10B, R1)
         # R1 / D-K: the shipped maps assigned roles to model IDs the harness no

@@ -101,7 +101,17 @@ fi
 # Empty output on EITHER side of a comparison is a NON-match (asserted below).
 dev_ino() { stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null; }
 
-GATE_ROOT="$(pwd -P)"
+GATE_ROOT="$(pwd -P)" || GATE_ROOT=""
+if [ -z "$GATE_ROOT" ]; then
+  # sebastian MEDIUM-1: the last unguarded `$(pwd -P)` under set -euo pipefail.
+  # If the physical cwd cannot be resolved (e.g. it was deleted underneath us),
+  # a bare assignment would exit here — BEFORE the provenance refusal banner —
+  # with a nondeterministic status and no explanation. Fail closed loudly
+  # instead: refuse to launch rather than evaluate provenance against an
+  # unknown root.
+  echo "mozart: REFUSED — cannot resolve the physical working directory (pwd -P failed); refusing to launch rather than evaluate bundle provenance against an unknown root." >&2
+  exit 1
+fi
 REPO_BUNDLE="$GATE_ROOT/.github/mozart"
 
 if [ -f "$REPO_BUNDLE/VERSION" ] && ! diff -r -q "$REPO_BUNDLE" "$BUNDLE" >/dev/null 2>&1; then

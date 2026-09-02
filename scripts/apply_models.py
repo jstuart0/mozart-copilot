@@ -489,6 +489,44 @@ def main(argv=None) -> int:
     if args.agents_dir and args.apply:
         print("usage error: --agents-dir is read-only and not valid with --apply (--apply remains repo-only)")
         return 2
+    # sebastian HIGH-6: write actions (--apply, --preset) must PARTICIPATE in
+    # the compatibility matrix, not silently lose to a first-flag-wins dispatch.
+    # The read checks below (--check / --explain / --validate-map /
+    # --check-families / --check-tiers) set ran_a_check and RETURN before
+    # cmd_stamp is ever reached — so `--preset X --apply --check-tiers`,
+    # `--preset X --check`, and `--apply --explain` used to run only the read
+    # check against the CURRENT canonical map and silently ignore the requested
+    # preset/write. This is the exact H1 defect class the campaign exists to
+    # kill. Reject any read/write mix outright (exit 2) rather than pick a
+    # surprising order: a write and a read-only assertion are different
+    # intentions and combining them is always a mistake.
+    write_requested = args.apply or (args.preset is not None)
+    read_requested = (
+        args.check
+        or args.explain
+        or (args.validate_map is not None)
+        or args.check_families
+        or args.check_tiers
+    )
+    if write_requested and read_requested:
+        write_flag = "--apply" if args.apply else "--preset"
+        read_flags = [
+            name
+            for name, on in (
+                ("--check", args.check),
+                ("--explain", args.explain),
+                ("--validate-map", args.validate_map is not None),
+                ("--check-families", args.check_families),
+                ("--check-tiers", args.check_tiers),
+            )
+            if on
+        ]
+        print(
+            f"usage error: {write_flag} (a write action) cannot be combined with "
+            f"read-only check{'s' if len(read_flags) > 1 else ''} {', '.join(read_flags)} — "
+            "run the write and the checks as separate invocations so neither is silently ignored"
+        )
+        return 2
     # P6/Y6 modifier compatibility matrix: --upstream-readme is only meaningful
     # with --check-tiers (data_cross_check_readme_vs_frontmatter runs solely
     # under do_tiers). Supplying it with any other action would accept-and-

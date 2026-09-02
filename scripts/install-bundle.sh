@@ -279,6 +279,66 @@ write_manifest() {
   chmod 0600 "$manifest"
 }
 
+# --------------------------------------------------------------------------
+# Install-time trust roots (D-E / D-H, P16). Records the canonical repo root
+# this install trusts, keyed on USER-SIDE state at
+# <copilot-home>/mozart-trust/roots (dir 0700, file 0600) — deliberately
+# OUTSIDE <copilot-home>/mozart/, which `cp -R` overwrites on every reinstall.
+# The launch wrapper (P17) exempts its provenance gate only for a current repo
+# root whose device:inode identity matches a recorded root; everything else
+# fails closed.
+# --------------------------------------------------------------------------
+
+# dev_ino DIR — canonical identity of a directory as "device:inode", or empty
+# on failure. Fail closed: empty output on EITHER side of a comparison is a
+# NON-match (used by the wrapper, P17). Copied verbatim into scripts/mozart.
+#
+# ORDER IS GNU-FIRST (`stat -c`), BSD-SECOND (`stat -f`) — the REVERSE of the
+# D-H illustrative snippet, and deliberately so (see the P16 report / CHANGELOG):
+# on GNU coreutils `stat -f` is --file-system and '%d'/'%i' are VALID filesystem
+# directives, so `stat -f '%d:%i'` SUCCEEDS with filesystem stats — identical for
+# every path on one volume — and a BSD-first order would fail OPEN on Linux/CI,
+# trusting any two paths on the same filesystem. GNU `stat -c` has no such
+# collision and BSD `stat` rejects `-c` outright, so GNU-first resolves to the
+# real device:inode and fails CLOSED on both platforms.
+dev_ino() { stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null; }
+
+# canonical_root DIR — DIR's physically-resolved absolute path, recorded in
+# human-readable form so a refusal banner can name it. Computed independently
+# of $REPO_ROOT (a bare logical `pwd` captured at line 102): reusing that would
+# record a logical path the physical wrapper lookup can never match under a
+# symlinked ancestor (macOS /tmp -> /private/tmp), refusing every launch (D-H/Y3).
+# Empty on failure.
+canonical_root() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+# record_trust_root COPILOT_HOME ROOT_DIR — append the canonical form of
+# ROOT_DIR to the user-side trust roots list, dedup by dev_ino identity (and by
+# exact canonical string, for the rare case dev_ino yields nothing). Appending
+# an already-recorded root is a no-op; ordering is not significant. Dir 0700,
+# file 0600. Caller guarantees COPILOT_HOME exists.
+record_trust_root() {
+  local chome="$1" rootdir="$2"
+  local canon; canon="$(canonical_root "$rootdir")"
+  if [ -z "$canon" ]; then
+    echo "WARNING: could not physically resolve '$rootdir' — not recording it as a trusted root; launches from it will need the MOZART_TRUST_REPO_BUNDLE override." >&2
+    return 0
+  fi
+  local trustdir="$chome/mozart-trust" rootsfile="$chome/mozart-trust/roots"
+  local id; id="$(dev_ino "$canon")"
+  mkdir -p "$trustdir"
+  chmod 0700 "$trustdir"
+  if [ -f "$rootsfile" ]; then
+    local existing
+    while IFS= read -r existing || [ -n "$existing" ]; do
+      [ -z "$existing" ] && continue
+      if [ "$existing" = "$canon" ]; then chmod 0600 "$rootsfile"; return 0; fi
+      if [ -n "$id" ] && [ "$(dev_ino "$existing")" = "$id" ]; then chmod 0600 "$rootsfile"; return 0; fi
+    done < "$rootsfile"
+  fi
+  printf '%s\n' "$canon" >> "$rootsfile"
+  chmod 0600 "$rootsfile"
+}
+
 usage() {
   cat >&2 <<'USAGE'
 usage: install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
@@ -495,6 +555,21 @@ if [ -n "$TARGET" ]; then
   # `wc -l | tr -d ' '` because BSD wc right-pads its count while GNU does not.
   N_AGENTS=$(ls "$TARGET"/.github/agents/*.agent.md 2>/dev/null | wc -l | tr -d ' ')
   echo "installed .github/agents ($N_AGENTS files) and .github/mozart (VERSION $SOURCE_VERSION) into $TARGET"
+
+  # P16/D-E (Y4) — a --target install trusts the TARGET repo root, but the
+  # trust list is USER-SIDE state, not repo content. Append the canonical
+  # $TARGET to ${COPILOT_HOME:-$HOME/.copilot}/mozart-trust/roots when that
+  # home exists. When it does not (a consumer with no user-scope install),
+  # print the per-invocation override explicitly rather than silently leaving
+  # every launch from this repo refused — r1's "silent for --target" promise
+  # was false; it is now either recorded or told exactly why not.
+  USER_COPILOT_HOME="${COPILOT_HOME:-$REAL_HOME_AMBIENT/.copilot}"
+  if [ -d "$USER_COPILOT_HOME" ]; then
+    record_trust_root "$USER_COPILOT_HOME" "$TARGET"
+    echo "recorded $(canonical_root "$TARGET") as a trusted repo root in $USER_COPILOT_HOME/mozart-trust/roots"
+  else
+    echo "NOTE: no Copilot home at $USER_COPILOT_HOME, so this repo was NOT added to the trust roots list. To launch mozart from it without the provenance gate refusing, pass the per-invocation override each time: MOZART_TRUST_REPO_BUNDLE=\"$(canonical_root "$TARGET")\" mozart \"<task>\" — or run a --user-scope install first. See docs."
+  fi
   exit 0
 fi
 
@@ -698,6 +773,15 @@ fi
 # any prior manifest, so a --no-wrapper or changed --bin-dir reinstall cannot
 # make an earlier-written path unrecoverable.
 write_manifest "$RESOLVED_COPILOT_HOME/mozart-manifest.txt" "${DEST_PATHS[@]}"
+
+# P16/D-E — record the SOURCE checkout as a trusted repo root, so the launch
+# wrapper's provenance gate (P17) exempts it. The recorded value is the
+# PHYSICAL resolution of $REPO_ROOT (via canonical_root), never $REPO_ROOT
+# itself — $REPO_ROOT is a bare logical `pwd` and the wrapper looks roots up
+# physically, so recording the logical form would refuse every launch under a
+# symlinked ancestor (D-H/Y3). The user-scope home was just created, so it
+# always exists here.
+record_trust_root "$RESOLVED_COPILOT_HOME" "$REPO_ROOT"
 
 # --------------------------------------------------------------------------
 # Post-install output — the grants, exactly (step 9).

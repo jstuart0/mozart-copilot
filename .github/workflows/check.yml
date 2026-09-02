@@ -26,6 +26,9 @@ jobs:
       - name: Parse — shell scripts have valid syntax
         run: bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
 
+      - name: No personal-infrastructure fingerprints (Phase P3 — C1 drift-guard)
+        run: bash scripts/check-fingerprints.sh
+
       - name: Validator self-test (fixture corpus)
         run: python3 scripts/check_agents.py --self-test --forms
 

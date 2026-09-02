@@ -29,6 +29,15 @@ and names both rather than improvising. See `docs/COPILOT_PORT.md` for the
 full rationale, including the CLI wrapper's repo-root grant (D9) and the
 two-literal-path probe's documented limit (D10).
 
+**Trust boundary.** The CLI wrapper (`scripts/mozart`) runs a provenance gate
+before launching: if the repo you launch from ships its own `.github/mozart`
+bundle that differs from the one you installed, the wrapper refuses unless that
+repo root is trusted (recorded by an install, or named for one invocation by
+`MOZART_TRUST_REPO_BUNDLE=<repo-root>`). This is **consent + baseline
+comparison, not authenticity** — it proves the tree is not the one you
+installed from, never that it is genuine. It does not run under a bare
+`copilot` launch or under VS Code. `SECURITY.md` documents the full limits.
+
 **Sandboxing.** If your Copilot CLI has local sandboxing enabled (a preview
 feature at time of writing), `--add-dir` widens the file tool's *read*
 scope, but the sandbox is a separate enforcement layer — `~/.copilot/mozart`

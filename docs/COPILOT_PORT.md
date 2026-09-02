@@ -452,10 +452,20 @@ a static, hand-maintained forward-maintenance item; edit
 `config/model-maps/`, for your org's actual model policy, and add any new model
 ID to `KNOWN_MODELS` when you do.
 
-Every role also carries a same-family `fallback`, surfaced by
+Every role also carries a `fallback`, surfaced by
 `apply_models.py --explain` and never itself stamped into a persona's
 `model:` — for when the primary is org-disabled or deprecated (a real risk:
-global model policy went GA 2026-08-26).
+global model policy went GA 2026-08-26). The shipped maps follow a
+**same-family** convention for fallbacks, but note that this is a convention,
+**not an enforced invariant**: `check_model_ids` deliberately does not bind a
+`fallback` to its role's family (a degradation path is not a D8 violation), so
+it validates only that a present fallback is a *known* model, never that it
+shares the primary's provider. The consequence to weigh before diverging from
+the convention: a cross-family fallback could, during a provider outage,
+converge the builders and validation roles onto a single family and silently
+defeat the D8 cross-family guarantee for the duration of the outage. If you
+need same-family fallback guaranteed rather than merely conventional, that is a
+design change (enforcement in `check_model_ids`), not a documentation edit.
 
 - `jackson` — role `builders` → `claude-sonnet-5`
 - `bob` — role `deep-reviewers` → `claude-opus-5` (upstream opus, exact match)

@@ -330,6 +330,14 @@ def cmd_check(path_str=None, agents_dir: Path = None) -> int:
 
 def cmd_stamp(apply: bool, preset: str) -> int:
     if preset:
+        # --preset names a bare map under config/model-maps/, never a path
+        # (xander L3): reject any separator or parent-dir token before it can
+        # reach PRESETS_DIR / f"{preset}.jsonc", or "../../some/map" escapes the
+        # preset directory and, if it validates, gets stamped over the canonical
+        # map. Constrain to a filename component; resolution happens after.
+        if "/" in preset or "\\" in preset or ".." in preset or preset != os.path.basename(preset):
+            print(f"FAIL: --preset must be a bare preset name, not a path (got '{preset}')")
+            return 1
         preset_path = PRESETS_DIR / f"{preset}.jsonc"
         if not preset_path.exists():
             print(f"FAIL: no such preset {preset_path.relative_to(REPO_ROOT)}")

@@ -284,6 +284,20 @@ jobs:
           if [ "$wrc" -eq 0 ]; then echo "write path did NOT refuse a dead ID" >&2; exit 1; fi
           git diff --quiet -- .github/agents .github/mozart/config || { echo "write path wrote bytes on a refusal" >&2; exit 1; }
 
+      - name: --preset is constrained to a bare name, not a path (xander L3)
+        # --preset builds PRESETS_DIR / f"{preset}.jsonc"; without this guard a
+        # value like "../../some/map" escapes config/model-maps/ and, if it
+        # validates, gets stamped over the canonical map. Assert the refusal by
+        # exit code (W7b: exact 1, not merely non-zero) AND the error substring.
+        run: |
+          out=$(python3 scripts/apply_models.py --preset ../../etc/evil --apply 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "--preset traversal: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'must be a bare preset name' || { echo "--preset traversal: missing refusal substring — $out" >&2; exit 1; }
+          out=$(python3 scripts/apply_models.py --preset sub/dir --apply 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "--preset separator: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'must be a bare preset name' || { echo "--preset separator: missing refusal substring — $out" >&2; exit 1; }
+          git diff --quiet -- .github/agents .github/mozart/config || { echo "--preset traversal wrote bytes on a refusal" >&2; exit 1; }
+
       - name: Every shipped preset validates structurally (Phase P10)
         # The plan's prose says "five presets"; the shipped set is currently TWO
         # (claude-bulk, gpt-bulk). The glob is the authority, not the prose —

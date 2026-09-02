@@ -938,9 +938,15 @@ def check_mozart_allowlist(agents_dir: Path = None) -> list:
 # Consequence, accepted: a NEWLY ADDED model is rejected here until someone
 # edits this mapping. That is the cheap failure. The expensive failure — a
 # REMOVED model shipping to consumers as an undispatchable roster — is what
-# this exists to catch, and a stale registry still catches it. (Verified live
-# in this campaign's own stage 4: xander, dexter and tessa hard-failed to
-# launch against a since-removed ID and needed manual overrides.)
+# this exists to catch. But be honest about the bound: a stale registry catches
+# a harness-removed model ONLY if the maintainer actually prunes the dropped ID
+# from KNOWN_MODELS. A registry left stale in the more likely direction — the
+# maintainer forgot to prune, so a dead ID lingers as a still-"known" entry —
+# will FALSE-PASS that dead ID straight through the gate and reproduce the exact
+# R1 incident this exists to prevent. The gate is a forcing function for the
+# prune, not a substitute for it. (Verified live in this campaign's own stage 4:
+# xander, dexter and tessa hard-failed to launch against a since-removed ID and
+# needed manual overrides.)
 #
 # The family column is not decoration: it is what binds a model ID to its
 # real provider, so roles.<r>.family stops being an unverified author-supplied

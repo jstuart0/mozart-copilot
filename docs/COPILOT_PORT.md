@@ -20,6 +20,29 @@ documented sentence means what this port assumes (verify-at-implementation,
 step 11), and whether the Copilot CLI's `/fleet` can drive mozart's dispatch
 protocol at all (out of scope for v1 — D13).
 
+## Decision registry
+
+The `D<n>` decision IDs used throughout this document resolve here. These IDs
+are **scoped to this file** (D-C): a bare `(D9)` elsewhere in the repo resolves
+against the row below, and this table is the one canonical definition. Mass-
+renaming every citation repo-wide was deliberately not done — 27 sites across 10
+files, including a historical changelog — so the registry, not a rename, is what
+gives a bare citation its meaning.
+
+| ID | Decision |
+|---|---|
+| D1 | The counterpoint reviewer is a native in-process subagent (`sebastian`), not an external shelled-out CLI process; it carries `read, search` only — never `execute` — because it reviews adversarial content (an untrusted diff, third-party package sources). |
+| D2 | Counterpoint runs as two independent second-model reads: on the plan (round 1) and on the final diff (round 2), always from a different model family than produced the work under review. |
+| D3 | Seven roles reproduce upstream's three model tiers exactly; collapsing to five or six roles would silently re-tier an agent, so the extra roles are kept. |
+| D4 | Per-agent toolset grants are narrowed from upstream with a stated, per-agent rationale (e.g. `bob` loses `edit`, `librarian` loses shell access) rather than being silently dropped; the VS Code surface's read/discovery grant is delivered as two pasted settings under the same decision. |
+| D7 | One resolved bundle root per run, probed from two literal candidates in order (`.github/mozart` under the working directory, then `~/.copilot/mozart`); the first whose `VERSION` reads wins, and every runtime read for that run comes from that one root. |
+| D8 | `validation` (counterpoint) always runs a different model *family* than `builders`; enforced as code (`apply_models.py --check-families`), and each role's declared `family` must match its model's real provider — never a trusted free-text label. |
+| D9 | Copilot CLI grant: the `mozart` wrapper `cd`s to `git rev-parse --show-toplevel` and execs `copilot --add-dir <bundle-root>`, normalizing the relative first candidate and mozart's repo-root-relative state onto one root. |
+| D9b | Roster trust is the CLI's, not the wrapper's: loading a repo's `.github/agents` is trusting that repo's configuration exactly as a plain `copilot` launched there does. The mitigation is observability (mozart narrates the resolved root and `VERSION` on its first line), not mechanical detection. |
+| D10 | Exactly one agent is `user-invocable: true` (`mozart`); every specialist is `false` and reachable only through mozart's `agents:` allowlist. No agent reads `$HOME`/`$COPILOT_HOME` itself — an agent's second bundle candidate is always the literal `~/.copilot/mozart`, and a custom Copilot home is a wrapper/installer concept only. |
+| D13 | Runtime-surface scope: VS Code is the only supported and validated surface for v1; the Copilot CLI is loads-but-unvalidated; the cloud coding agent is out of scope. |
+| D14 | Build-time vs runtime split, one canonical location per file: an agent-read file lives in the bundle and installs with it; a build-time-only input to the validator/stamper/tests lives at the repo root and is never installed. |
+
 ## Primitive mapping
 
 The Claude Code tool noun on the left is what upstream personas declare in

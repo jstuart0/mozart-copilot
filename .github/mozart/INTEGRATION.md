@@ -26,8 +26,10 @@ user-scope bundle installed by `scripts/install-bundle.sh --user-scope
 repo pinned this way wins over the shared one whenever the process is
 rooted at this repo's root. If neither candidate resolves, an agent stops
 and names both rather than improvising. See `docs/COPILOT_PORT.md` for the
-full rationale, including the CLI wrapper's repo-root grant (D9) and the
-two-literal-path probe's documented limit (D10).
+full rationale, including the CLI wrapper's repo-root grant and the
+two-literal-path probe's documented limit — each agent resolves its bundle from
+exactly two fixed candidates (`.github/mozart` under the working directory, then
+`~/.copilot/mozart`), so a bundle installed anywhere else is never found.
 
 **Trust boundary.** The CLI wrapper (`scripts/mozart`) runs a provenance gate
 before launching: if the repo you launch from ships its own `.github/mozart`

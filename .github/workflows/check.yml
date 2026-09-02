@@ -280,13 +280,17 @@ jobs:
           grep -qE "('\\.\\.'|not absolute|not normalized|component)" out2.txt || { echo "missing non-normalized refusal" >&2; cat out2.txt; exit 1; }
 
       - name: Uninstall — a parent swapped for a symlink AFTER install deletes nothing outside the namespace (sebastian HIGH-2 r2)
-        # HIGH-2 r2: the Pass-1 namespace test is LEXICAL, so replacing
-        # <copilot-home>/agents (or the wrapper's bin dir) with a symlink after
-        # install redirected a recorded, checksum-matching path OUT of the owned
-        # namespace and the old code deleted it. Pass 2 now physically resolves
-        # each candidate's parent and refuses a symlinked parent. Exercise BOTH
-        # the agents dir and the wrapper. W7b: exact refusal substring + the
-        # attacker-controlled file must survive.
+        # HIGH-2 r2/r3: the Pass-1 namespace test is LEXICAL, so replacing
+        # <copilot-home>/agents (or the wrapper's bin dir, or a HIGHER ancestor)
+        # with a symlink after install redirected a recorded, checksum-matching
+        # path OUT of the owned namespace and the old code deleted it. Pass 2 now
+        # physically resolves each candidate's parent and refuses a symlinked
+        # parent AND a physical parent that is not the owned identity (the agents
+        # dir for an agent, the installer-recorded canonical parent for the
+        # wrapper). Exercise the agents dir (a), the wrapper's immediate bin dir
+        # (b), and — the r3 gap — the wrapper's GRANDPARENT (c), where the
+        # immediate parent stays an ordinary directory. W7b: exact refusal
+        # substring + the attacker-controlled file must survive.
         run: |
           # (a) agents dir swapped for a symlink to an attacker dir.
           H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
@@ -308,6 +312,21 @@ jobs:
           if [ "$rc" -ne 0 ]; then echo "expected exit 0 (skip, not fatal), got $rc" >&2; cat out2.txt; exit 1; fi
           grep -qF 'parent directory is a symlink' out2.txt || { echo "missing symlinked-parent refusal for wrapper" >&2; cat out2.txt; exit 1; }
           [ -e "$evil2/mozart" ] || { echo "attacker wrapper under the symlinked bin dir was DELETED — containment failed" >&2; exit 1; }
+          # (c) wrapper GRANDPARENT swapped for a symlink; the immediate parent
+          # 'bin' stays an ordinary directory, so the [ -L parent ] check in (b)
+          # is FALSE. Only the physical-parent-vs-installer-recorded-parent
+          # equality catches this — the wrapper equivalent of the agent-parent
+          # check. Without it a checksum-matching external wrapper is deleted.
+          H="$(mktemp -d)"; CH="$H/.copilot"
+          BASE="$(mktemp -d)"; mkdir -p "$BASE/root/bin"; B="$BASE/root/bin"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          evil3="$(mktemp -d)"; mkdir -p "$evil3/bin"; cp "$B/mozart" "$evil3/bin/mozart"
+          rm -rf "$BASE/root"; ln -s "$evil3" "$BASE/root"
+          [ -L "$B" ] && { echo "test setup wrong: immediate parent bin must NOT be a symlink" >&2; exit 1; } || true
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out3.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "expected exit 0 (skip, not fatal), got $rc" >&2; cat out3.txt; exit 1; fi
+          grep -qF 'installer-recorded wrapper parent' out3.txt || { echo "missing recorded-parent refusal for a swapped wrapper GRANDPARENT" >&2; cat out3.txt; exit 1; }
+          [ -e "$evil3/bin/mozart" ] || { echo "attacker wrapper under the symlinked GRANDPARENT was DELETED — containment failed" >&2; exit 1; }
 
       - name: Uninstall — MED-A — a failing hash utility skips (never fatally aborts) with entries still deletable (sebastian MED-A)
         # MED-A: `cur="$(sha256_of "$path")"` was unguarded under set -euo

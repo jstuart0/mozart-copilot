@@ -15,11 +15,16 @@
 #      is a MEMBER of the installer-written allowlist — never a '*/mozart'
 #      basename match against any file named 'mozart' anywhere;
 #   4. before deleting, physically resolves each candidate's PARENT and refuses
-#      a symlinked parent or (for an agent) a parent that is not the owned
-#      agents dir — so a parent swapped for a symlink after install cannot
-#      redirect a recorded path out of the namespace — then deletes through the
-#      validated physical path only when its current sha256 still matches the
-#      recorded one (modified-since-install is skipped, never deleted).
+#      a symlinked parent, an agent whose physical parent is not the owned
+#      agents dir, or a wrapper whose physical parent is not its installer-
+#      recorded canonical parent — so a parent OR ancestor swapped for a symlink
+#      after install is refused rather than followed out of the namespace — then
+#      deletes through the validated physical path only when its current sha256
+#      still matches the recorded one (modified-since-install is skipped, never
+#      deleted). This narrows but does not eliminate a leaf-and-ancestor
+#      pathname TOCTOU: a concurrent local actor able to mutate these
+#      directories in the window between validation and `rm` remains a
+#      documented residual.
 #
 # It is self-contained: run `bash scripts/uninstall.sh` from a checkout, or
 # copy this block out and run it directly if the checkout is gone. Portable
@@ -161,12 +166,16 @@ while [ "$i" -lt "$n" ]; do
   if [ ! -e "$path" ]; then echo "already gone: $path"; continue; fi
   if [ -L "$path" ]; then echo "REFUSED (is a symlink, not the file we installed): $path" >&2; continue; fi
 
-  # HIGH-2: Pass 1's namespace test is LEXICAL, so a parent swapped for a
-  # symlink AFTER install still passes it. Before deleting, refuse a symlinked
-  # immediate parent outright, physically resolve the parent, require an agent
-  # candidate's physical parent to equal the owned agents dir, and delete
-  # through the VALIDATED physical path — never through the lexical name whose
-  # parent may now redirect outside the namespace.
+  # HIGH-2: Pass 1's namespace test is LEXICAL, so a parent — or a higher
+  # ancestor — swapped for a symlink AFTER install still passes it. Before
+  # deleting, refuse a symlinked immediate parent outright, physically resolve
+  # the parent, then require the physical parent to equal the candidate's owned
+  # identity: for an agent, the owned agents dir; for a wrapper, its installer-
+  # recorded canonical parent (the lexical parent of the allowlist-matched path,
+  # which the installer canonicalized at record time). A swapped ancestor makes
+  # the physical parent resolve elsewhere, so the equality fails and we refuse
+  # rather than follow it. Delete through the VALIDATED physical path — never
+  # through the lexical name whose parent may now redirect outside the namespace.
   parent="${path%/*}"
   if [ -L "$parent" ]; then
     echo "REFUSED (parent directory is a symlink, would redirect outside the owned namespace): $path" >&2
@@ -179,6 +188,10 @@ while [ "$i" -lt "$n" ]; do
   fi
   if [ "$kind" = "agent" ] && { [ -z "$agents_phys" ] || [ "$parent_phys" != "$agents_phys" ]; }; then
     echo "REFUSED (physical parent '$parent_phys' is not the owned agents dir '$agents_phys', not ours to delete): $path" >&2
+    continue
+  fi
+  if [ "$kind" = "wrapper" ] && [ "$parent_phys" != "$parent" ]; then
+    echo "REFUSED (physical parent '$parent_phys' is not the installer-recorded wrapper parent '$parent' — a parent or ancestor was swapped for a symlink after install, not ours to delete): $path" >&2
     continue
   fi
   target="$parent_phys/${path##*/}"

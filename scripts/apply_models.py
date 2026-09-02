@@ -537,6 +537,26 @@ def main(argv=None) -> int:
             "(the upstream README DATA cross-check runs solely under --check-tiers)"
         )
         return 2
+    # MED-C: --agents-dir DIR only redirects which agent-definitions roster the
+    # READ checks below validate against — cmd_check and run_map_checks are its
+    # only consumers. Supplied with --preset/--apply (write) or --explain (which
+    # never reads the roster) it is silently ignored — the same accept-and-
+    # discard defect class this campaign kills. Require at least one consuming
+    # action. (--apply is caught by the more specific guard above; this covers
+    # --agents-dir alone, with --preset, and with --explain.)
+    agents_dir_consumed = (
+        args.check
+        or (args.validate_map is not None)
+        or args.check_families
+        or args.check_tiers
+    )
+    if args.agents_dir is not None and not agents_dir_consumed:
+        print(
+            "usage error: --agents-dir DIR only affects the roster the read checks "
+            "validate against; supply it with at least one of --check, --validate-map, "
+            "--check-families, --check-tiers (it is ignored by --apply, --preset, and --explain)"
+        )
+        return 2
 
     # Every read-only check below composes in one invocation instead of a
     # first-matching-flag-wins dispatch (the same class of bug as Phase 6's

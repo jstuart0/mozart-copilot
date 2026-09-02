@@ -355,6 +355,15 @@ validate_manifest_target() {
     echo "REFUSED: ownership manifest path $manifest is a symlink; refusing to write through it — this would truncate/append to the link's target and forge the uninstall's delete authority. Remove it and re-run." >&2
     exit 1
   fi
+  # HIGH-4: a DIRECTORY (or other non-regular node) at the manifest path is not
+  # a symlink, so the check above misses it; `mv -f "$tmp" "$manifest"` would
+  # then move the temp file INSIDE the directory and report success WITHOUT
+  # creating an authoritative manifest — the uninstall would find nothing to
+  # act on. Reject the wrong node type before any write.
+  if [ -e "$manifest" ] && [ ! -L "$manifest" ] && [ ! -f "$manifest" ]; then
+    echo "REFUSED: ownership manifest path $manifest exists but is not a regular file (a directory or special file); refusing to write — an 'mv' into it would hide the temp file inside it and leave no authoritative manifest. Remove it and re-run." >&2
+    exit 1
+  fi
   if [ -f "$manifest" ] && [ ! -r "$manifest" ]; then
     echo "REFUSED: existing ownership manifest $manifest is unreadable — refusing to rewrite it, which would orphan the paths a prior install recorded." >&2
     exit 2
@@ -395,7 +404,11 @@ write_manifest() {
   # 4. Fresh, checksummed entries for every path written this run.
   local sum
   for p in "$@"; do
-    sum="$(sha256_of "$p")"
+    # `|| sum=""` (sebastian MED-A): sha256_of runs a pipeline under
+    # `set -euo pipefail`; a failing hash utility makes the pipeline nonzero,
+    # and the bare assignment would EXIT here — AFTER artifacts were copied —
+    # before the explicit "could not compute sha256" refusal below can fire.
+    sum="$(sha256_of "$p")" || sum=""
     if [ -z "$sum" ]; then
       echo "REFUSED: could not compute sha256 for $p — refusing to write an unverifiable ownership-manifest entry." >&2
       exit 2
@@ -449,6 +462,25 @@ dev_ino() { stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null
 # Empty on failure.
 canonical_root() { ( cd "$1" 2>/dev/null && pwd -P ); }
 
+# physical_root_into VAR DIR — assign canonical_root DIR to the named variable
+# WITHOUT the trailing-newline loss plain command substitution inflicts. Bash
+# strips ALL trailing newlines from `$(...)`, INCLUDING newlines that are part
+# of the directory name — so a target named "/tmp/victim<newline>" would be
+# recorded as "/tmp/victim" and slip past has_control_char, trusting a DIFFERENT
+# repo (sebastian HIGH-3). A printf-X sentinel keeps every byte through the
+# substitution; we then strip exactly the sentinel and pwd's own single
+# terminator, leaving any name-embedded trailing newline intact for
+# has_control_char to reject. Empty on resolution failure. Assigns via a
+# caller-named variable (printf -v, portable to bash 3.2) so the value is never
+# re-captured through another newline-stripping substitution.
+physical_root_into() {
+  local __var="$1" __dir="$2" __out
+  __out="$(canonical_root "$__dir"; printf X)"
+  __out="${__out%X}"        # strip the sentinel (last byte is always X)
+  __out="${__out%$'\n'}"    # strip pwd's single trailing terminator only
+  printf -v "$__var" '%s' "$__out"
+}
+
 # validate_trust_target COPILOT_HOME ROOT_DIR — the trust-state checks that
 # must fire before any write (sebastian HIGH-3/HIGH-4 preflight): refuse a
 # canonical root containing a control character (HIGH-3 — a canonical path with
@@ -460,7 +492,7 @@ canonical_root() { ( cd "$1" 2>/dev/null && pwd -P ); }
 # warning.
 validate_trust_target() {
   local chome="$1" rootdir="$2"
-  local canon; canon="$(canonical_root "$rootdir")" || canon=""
+  local canon; physical_root_into canon "$rootdir"
   if [ -n "$canon" ] && has_control_char "$canon"; then
     echo "REFUSED: refusing to record a trusted repo root whose canonical path contains a control character (newline, carriage return, tab, ...) — it would be written as multiple trust roots and inject trust for another repo, bypassing the provenance gate: $canon" >&2
     exit 1
@@ -470,8 +502,22 @@ validate_trust_target() {
     echo "REFUSED: trust dir $trustdir is a symlink; refusing to write through it — this would poison the trust roots the launch gate relies on. Remove it and re-run." >&2
     exit 1
   fi
+  # HIGH-4: a REGULAR FILE (or other non-directory) at the trust-dir path is
+  # not a symlink, so the check above misses it; `mkdir -p` then fails AFTER
+  # agents/bundle were already mutated. Reject the wrong node TYPE up front.
+  if [ -e "$trustdir" ] && [ ! -L "$trustdir" ] && [ ! -d "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir exists but is not a directory (a regular or special file); refusing to install — the trust roots the launch gate relies on cannot be written under it. Remove it and re-run." >&2
+    exit 1
+  fi
   if [ -L "$rootsfile" ]; then
     echo "REFUSED: trust roots file $rootsfile is a symlink; refusing to write through it — this would poison the trust roots the launch gate relies on. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a DIRECTORY at the roots-file path would make `mv -f "$tmp" "$rootsfile"`
+  # move the temp file INSIDE it and report success without an authoritative
+  # roots file. Reject the wrong node type before any write.
+  if [ -e "$rootsfile" ] && [ ! -L "$rootsfile" ] && [ ! -f "$rootsfile" ]; then
+    echo "REFUSED: trust roots path $rootsfile exists but is not a regular file (a directory or special file); refusing to write — an 'mv' into it would hide the temp file inside it and leave no authoritative trust roots. Remove it and re-run." >&2
     exit 1
   fi
 }
@@ -483,11 +529,12 @@ validate_trust_target() {
 # file 0600. Caller guarantees COPILOT_HOME exists.
 record_trust_root() {
   local chome="$1" rootdir="$2"
-  # `|| canon=""` (sebastian MEDIUM-2): canonical_root is `( cd && pwd -P )`,
-  # nonzero when the dir is unresolvable; under `set -e` the bare assignment
-  # would EXIT here — after artifacts were written — instead of reaching the
-  # documented empty-identity warning/fallback below.
-  local canon; canon="$(canonical_root "$rootdir")" || canon=""
+  # HIGH-3 / MEDIUM-2: capture the physical root via physical_root_into, which
+  # preserves a name-embedded trailing newline (plain `$(canonical_root ...)`
+  # strips ALL trailing newlines, silently recording a DIFFERENT path) and
+  # yields empty on an unresolvable dir — so we reach the documented warning
+  # below instead of exiting mid-install under `set -e` after artifacts landed.
+  local canon; physical_root_into canon "$rootdir"
   if [ -z "$canon" ]; then
     echo "WARNING: could not physically resolve '$rootdir' — not recording it as a trusted root; launches from it will need the MOZART_TRUST_REPO_BUNDLE override." >&2
     return 0
@@ -540,8 +587,22 @@ validate_wrapper_target() {
     echo "REFUSED: trust dir $trustdir is a symlink; refusing to write the wrapper-location allowlist through it. Remove it and re-run." >&2
     exit 1
   fi
+  # HIGH-4: a regular (or special) file at the trust-dir path is not a symlink;
+  # `mkdir -p` would fail AFTER the wrapper/agents were mutated. Reject the
+  # wrong node type before any write.
+  if [ -e "$trustdir" ] && [ ! -L "$trustdir" ] && [ ! -d "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir exists but is not a directory (a regular or special file); refusing to write the wrapper-location allowlist under it. Remove it and re-run." >&2
+    exit 1
+  fi
   if [ -L "$wfile" ]; then
     echo "REFUSED: wrapper-location allowlist $wfile is a symlink; refusing to write through it — the uninstall trusts this file to decide which wrapper path it may delete. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a DIRECTORY at the allowlist path would make `mv -f "$tmp" "$wfile"`
+  # move the temp file INSIDE it and report success without an authoritative
+  # allowlist. Reject the wrong node type before any write.
+  if [ -e "$wfile" ] && [ ! -L "$wfile" ] && [ ! -f "$wfile" ]; then
+    echo "REFUSED: wrapper-location allowlist $wfile exists but is not a regular file (a directory or special file); refusing to write — an 'mv' into it would hide the temp file inside it and leave no authoritative allowlist. Remove it and re-run." >&2
     exit 1
   fi
 }
@@ -809,6 +870,11 @@ if [ -n "$TARGET" ]; then
     fi
     make_temp_in "$TARGET/.github/agents"; t="$MOZART_LAST_TEMP"
     cp "$f" "$t"
+    # MED-B: make_temp_in creates the temp 0600 and `cp` retains the existing
+    # destination mode, so without this an installed agent file would land 0600
+    # and become unreadable to other users of a shared checkout. Set the
+    # intended world-readable mode on the temp BEFORE the atomic rename.
+    chmod 0644 "$t"
     mv -f "$t" "$d"
   done
 
@@ -1077,11 +1143,18 @@ for i in "${!DEST_PATHS[@]}"; do
   fi
   make_temp_in "$(dirname "$d")"; t="$MOZART_LAST_TEMP"
   cp "${SRC_PATHS[$i]}" "$t"
+  # MED-B: make_temp_in creates the temp 0600 and both BSD and GNU `cp` retain
+  # the existing destination mode, so agent files would otherwise land 0600 and
+  # be unreadable to other users of a shared checkout. Set the intended mode on
+  # the temp BEFORE the atomic rename — 0755 for the executable wrapper, 0644
+  # for the world-readable agent definitions.
+  if [ "$NO_WRAPPER" -eq 0 ] && [ "$d" = "$BIN_DIR/mozart" ]; then
+    chmod 0755 "$t"
+  else
+    chmod 0644 "$t"
+  fi
   mv -f "$t" "$d"
 done
-if [ "$NO_WRAPPER" -eq 0 ]; then
-  chmod 0755 "$BIN_DIR/mozart"
-fi
 
 # P15/D-I — record ownership of exactly the shared-namespace files written
 # this run (agent definitions and, unless --no-wrapper, the CLI wrapper). The

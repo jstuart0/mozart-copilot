@@ -230,6 +230,24 @@ jobs:
           n=$(printf '%s\n' "$out" | grep -c 'D8 violation')
           if [ "$n" -ne 1 ]; then echo "expected exactly 1 'D8 violation' line, got $n — $out" >&2; exit 1; fi
 
+      - name: Modifier matrix — --agents-dir is rejected by the actions that never consume it (Z7)
+        # Z7 resolution: --agents-dir was permitted-but-inert with
+        # --check-install and --check-carve (H1's twin — a documented-and-ignored
+        # modifier). The matrix now narrows it to --map, its sole consumer. This
+        # regression proves both the narrowed rejection (exit 2, naming both
+        # flags) and that --map still genuinely consumes it (positive control).
+        run: |
+          out=$(python3 scripts/check_agents.py --check-install "$(mktemp -d)" --agents-dir "$(mktemp -d)" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 2 ]; then echo "expected exit 2 for --agents-dir + --check-install, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF -- '--agents-dir' || { echo "message does not name --agents-dir — $out" >&2; exit 1; }
+          printf '%s\n' "$out" | grep -qF -- '--check-install' || { echo "message does not name --check-install — $out" >&2; exit 1; }
+          out=$(python3 scripts/check_agents.py --check-carve tests/coverage-map.tsv --agents-dir "$(mktemp -d)" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 2 ]; then echo "expected exit 2 for --agents-dir + --check-carve, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF -- '--check-carve' || { echo "message does not name --check-carve — $out" >&2; exit 1; }
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "--map should still consume --agents-dir (expected exit 1), got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'tests/fixtures/roster-floor-agents' || { echo "--map did not walk the overridden roster — $out" >&2; exit 1; }
+
       - name: Every shipped preset validates structurally (Phase P10)
         # The plan's prose says "five presets"; the shipped set is currently TWO
         # (claude-bulk, gpt-bulk). The glob is the authority, not the prose —

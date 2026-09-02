@@ -1349,9 +1349,9 @@ def build_parser():
         "--agents-dir",
         metavar="DIR",
         help="validate against an installed agents directory (e.g. <copilot-home>/agents) instead of "
-             ".github/agents/. Consumed by --map (roster coverage + mozart's allowlist); the modifier "
-             "matrix rejects it with --emit-runtime-reads, whose stream is defined over the source roster "
-             "only (Y20).",
+             ".github/agents/. Consumed by --map only (roster coverage + mozart's allowlist); the modifier "
+             "matrix rejects it with every other action — --emit-runtime-reads (source-roster stream, Y20), "
+             "and --check-install / --check-carve, which derive their own target and never read it (Z7).",
     )
     return p
 
@@ -1368,7 +1368,20 @@ def validate_modifier_matrix(args) -> int:
                               no-action roster validate-all, which also reads it)
       --layout             -> --check-install only
       --upstream-mozart-md -> --check-carve only
-      --agents-dir         -> --map, --check-install, --check-carve
+      --agents-dir         -> --map only
+
+    Z7 (found by jackson at P9, resolved here at P10): P6's original row
+    permitted --agents-dir with --check-install and --check-carve, but neither
+    action consumes it — --check-carve reads a coverage-map.tsv of upstream
+    mozart.md line ranges and never touches the roster, and --check-install
+    derives its agents directory from the install DIR + --layout
+    (_installed_agents_dir), so an external override would validate a *different*
+    roster than the install under test. A permitted-but-inert modifier is
+    exactly the H1 defect class this campaign exists to kill (documented-and-
+    ignored is a thin defence over silently-ignored). Resolution: NARROW the row
+    to --map, the sole genuine consumer, rather than manufacturing a semantics
+    for a flag two actions have no coherent use for. --agents-dir alongside
+    --check-install or --check-carve now rejects (exit 2), naming both flags.
 
     Z5 (found by jackson at P6): before P9, --agents-dir was not a
     check_agents.py flag, so argparse rejected --emit-runtime-reads --agents-dir
@@ -1416,7 +1429,7 @@ def validate_modifier_matrix(args) -> int:
         if rc:
             return rc
     if args.agents_dir is not None:
-        rc = enforce("--agents-dir", ["--map", "--check-install", "--check-carve"], default_consumes=False)
+        rc = enforce("--agents-dir", ["--map"], default_consumes=False)
         if rc:
             return rc
     return 0
@@ -1498,9 +1511,9 @@ def main(argv=None) -> int:
 
     # --agents-dir DIR overrides the roster the map checks walk (default
     # .github/agents/). Resolved once here; only --map consumes it (roster
-    # coverage + mozart's allowlist). --check-install and --check-carve derive
-    # their own target from their own flag value, so the matrix permits the
-    # combination but they do not read this override.
+    # coverage + mozart's allowlist). The modifier matrix (Z7) rejects it
+    # alongside --check-install and --check-carve, which derive their own
+    # target from their own flag value and never read this override.
     resolved_agents_dir = None
     if args.agents_dir is not None:
         resolved_agents_dir = Path(args.agents_dir)

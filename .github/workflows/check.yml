@@ -151,6 +151,99 @@ jobs:
             python3 scripts/apply_models.py --validate-map "$m" --check-families --check-tiers || exit 1
           done
 
+      # ------------------------------------------------------------------
+      # Phase P10 (D-G): wire the negative map fixtures into CI through BOTH
+      # entry points (check_agents.py --map and apply_models.py --validate-map).
+      # Every step uses the W7b idiom — capture stdout+status once, assert the
+      # exit is *exactly* 1 (never a bare `! cmd`, which would also pass on the
+      # `2` that cmd_map:736 returns for a missing map file), then assert a
+      # required error substring. For the structural single-defect fixtures the
+      # FAIL count is pinned so a future regeneration cannot silently degrade to
+      # a no-op — D-G's load-bearing point: map-orphan-role.jsonc used to exit 1
+      # on ~20 unrelated coverage errors, so an exit-code-only step proved
+      # nothing. The output is captured with `out=$(cmd) && rc=0 || rc=$?` and
+      # grepped from the variable, never piped live (a pipe discards the
+      # command's status, W7b).
+      # ------------------------------------------------------------------
+      - name: Map fixture — orphan role fails via both entry points, exactly 1 FAIL (Phase P10, D-G)
+        run: |
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-orphan-role.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c '^FAIL')
+          if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'orphan role' || { echo "check_agents --map: missing 'orphan role' — $out" >&2; exit 1; }
+          out=$(python3 scripts/apply_models.py --validate-map tests/fixtures/map-orphan-role.jsonc 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "validate-map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'orphan role' || { echo "validate-map: missing 'orphan role' — $out" >&2; exit 1; }
+
+      - name: Map fixture — map entry without agent file fails via both entry points, exactly 1 FAIL (Phase P10, D-G)
+        run: |
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-unassigned-file.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c '^FAIL')
+          if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'phantom-agent' || { echo "check_agents --map: missing 'phantom-agent' — $out" >&2; exit 1; }
+          out=$(python3 scripts/apply_models.py --validate-map tests/fixtures/map-unassigned-file.jsonc 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "validate-map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'phantom-agent' || { echo "validate-map: missing 'phantom-agent' — $out" >&2; exit 1; }
+
+      - name: Map fixture — agent file without map entry fails via both entry points, exactly 1 FAIL (Phase P10)
+        run: |
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-uncovered-agent.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c '^FAIL')
+          if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'has no entry in the map' || { echo "check_agents --map: missing substring — $out" >&2; exit 1; }
+          out=$(python3 scripts/apply_models.py --validate-map tests/fixtures/map-uncovered-agent.jsonc 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "validate-map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'has no entry in the map' || { echo "validate-map: missing substring — $out" >&2; exit 1; }
+
+      - name: Map fixture — undefined role fails via both entry points, exactly 1 FAIL (Phase P10)
+        run: |
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-undefined-role.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c '^FAIL')
+          if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF "undefined role 'ghost-role'" || { echo "check_agents --map: missing substring — $out" >&2; exit 1; }
+          out=$(python3 scripts/apply_models.py --validate-map tests/fixtures/map-undefined-role.jsonc 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "validate-map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF "undefined role 'ghost-role'" || { echo "validate-map: missing substring — $out" >&2; exit 1; }
+
+      - name: Map fixture — roster-floor violation via --agents-dir (Phase P10; check_agents.py --map only, --min-agents has no --validate-map counterpart)
+        run: |
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc — $out" >&2; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c '^FAIL')
+          if [ "$n" -ne 1 ]; then echo "expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF -- '--min-agents requires >= 22' || { echo "missing roster-floor substring — $out" >&2; exit 1; }
+
+      - name: Map fixture — silent retier is caught by --check-tiers (Phase P10; apply_models.py-only modifier)
+        run: |
+          out=$(python3 scripts/apply_models.py --validate-map tests/fixtures/map-retiered.jsonc --check-tiers 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'silent upgrade' || { echo "missing 'silent upgrade' — $out" >&2; exit 1; }
+
+      - name: Map fixture — same-family validation is caught by --check-families, exactly one D8 line (Phase P10; apply_models.py-only modifier)
+        run: |
+          out=$(python3 scripts/apply_models.py --validate-map tests/fixtures/same-family.jsonc --check-families 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc — $out" >&2; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c 'D8 violation')
+          if [ "$n" -ne 1 ]; then echo "expected exactly 1 'D8 violation' line, got $n — $out" >&2; exit 1; fi
+
+      - name: Every shipped preset validates structurally (Phase P10)
+        # The plan's prose says "five presets"; the shipped set is currently TWO
+        # (claude-bulk, gpt-bulk). The glob is the authority, not the prose —
+        # this loops over whatever config/model-maps/*.jsonc actually ships, so
+        # it neither hard-codes a count nor silently passes on an empty glob
+        # (an empty config/model-maps/ would make the loop a no-op, but the
+        # stricter --check-families/--check-tiers step above already fails
+        # closed on that). Complements that stricter step with a plain
+        # structural pass, matching the phase's Automated item verbatim.
+        run: |
+          for m in config/model-maps/*.jsonc; do
+            python3 scripts/apply_models.py --validate-map "$m" || exit 1
+          done
+
       - name: Lint fixture — clean campaign is clean
         run: bash scripts/mozart-lint.sh tests/fixtures/campaign/clean
 

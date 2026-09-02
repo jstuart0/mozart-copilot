@@ -17,8 +17,9 @@
 #   4. before deleting, physically resolves each candidate's PARENT and refuses
 #      a symlinked parent, an agent whose physical parent is not the owned
 #      agents dir, or a wrapper whose physical parent is not its installer-
-#      recorded canonical parent — so a parent OR ancestor swapped for a symlink
-#      after install is refused rather than followed out of the namespace — then
+#      recorded canonical parent — so a parent OR ancestor swap that redirects
+#      the physical resolution away from the recorded owned identity is refused
+#      rather than followed out of the namespace — then
 #      deletes through the validated physical path only when its current sha256
 #      still matches the recorded one (modified-since-install is skipped, never
 #      deleted). This narrows but does not eliminate a leaf-and-ancestor

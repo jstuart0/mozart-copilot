@@ -165,7 +165,13 @@ jobs:
           if [ "$rc" -ne 0 ]; then echo "expected exit 0 for a relative-root install, got $rc" >&2; cat out.txt; exit 1; fi
           man="$WORK/rel/ch/mozart-manifest.txt"
           if [ ! -f "$man" ]; then echo "manifest not written at $man" >&2; cat out.txt; exit 1; fi
-          nonabs=$(awk '{print $2}' "$man" | grep -vc '^/' || true)
+          # `grep -vc` prints 0 but EXITS 1 when every line is absolute (the
+          # expected pass). Capture its status explicitly and accept ONLY status
+          # 1 as expected-zero; any other status (missing/unreadable manifest, a
+          # grep execution error) is a hard failure, not a suppressed check — the
+          # `-ne 0` count assertion below still fires.
+          nonabs=$(awk '{print $2}' "$man" | grep -vc '^/') && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then echo "grep -vc '^/' failed on the manifest (rc=$rc)" >&2; awk '{print $2}' "$man" >&2; exit 1; fi
           if [ "$nonabs" -ne 0 ]; then echo "manifest holds $nonabs non-absolute path(s):" >&2; awk '{print $2}' "$man" | grep -v '^/' >&2; exit 1; fi
           # And the wrapper-location allowlist entry is absolute too.
           grep -q '^/' "$WORK/rel/ch/mozart-trust/wrapper-paths" || { echo "wrapper allowlist entry not absolute" >&2; cat "$WORK/rel/ch/mozart-trust/wrapper-paths" >&2; exit 1; }
@@ -347,10 +353,14 @@ jobs:
           grep -qF 'modified since install' out.txt || { echo "missing the documented skip message" >&2; cat out.txt; exit 1; }
           # Expected result is ZERO removals; `grep -c` prints 0 but EXITS 1 on
           # no match, which would kill this step under `bash -e` before the
-          # assertion runs. `|| true` here guards a count capture whose zero
-          # value IS the expected result — not a suppressed verification (the
-          # `-ne 0` assertion below still fires); do not read it as W7b suppression.
-          removed=$(grep -c '^removed:' out.txt || true)
+          # assertion runs. Capture grep's status explicitly and accept ONLY
+          # status 1 as the expected-zero match — distinguish it from a genuine
+          # grep error (missing/unreadable out.txt, an execution failure), which
+          # is a hard failure rather than a suppressed verification. A bare
+          # `|| true` would also swallow those errors and leave `removed` empty,
+          # weakening the `-ne 0` count assertion that still fires below.
+          removed=$(grep -c '^removed:' out.txt) && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then echo "grep -c '^removed:' failed on out.txt (rc=$rc)" >&2; cat out.txt; exit 1; fi
           if [ "$removed" -ne 0 ]; then echo "a hash failure still deleted $removed file(s)" >&2; cat out.txt; exit 1; fi
           after=$(ls "$CH/agents" | wc -l | tr -d ' ')
           if [ "$after" -ne "$before" ]; then echo "agents count changed under a failing hash ($before -> $after)" >&2; exit 1; fi

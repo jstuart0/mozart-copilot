@@ -244,9 +244,11 @@ conservative:
   recorded path is a **member of the installer-written allowlist** — never a
   `*/mozart` basename match against any file named `mozart` anywhere.
 - Immediately before each delete it **physically resolves the file's parent and
-  refuses a symlinked parent or ancestor**: an agent's resolved parent must be
-  the owned agents dir, and the wrapper's must equal its installer-recorded
-  canonical parent, then the delete goes through that validated physical path.
+  refuses a symlinked immediate parent, or any parent/ancestor redirect whose
+  physical resolution differs from the recorded owned identity**: an agent's
+  resolved parent must be the owned agents dir, and the wrapper's must equal its
+  installer-recorded canonical parent, then the delete goes through that
+  validated physical path.
   This narrows — but does not eliminate — a leaf-and-ancestor pathname TOCTOU: a
   concurrent local actor able to mutate those directories in the window between
   validation and the `rm` remains a known, documented residual.
@@ -281,8 +283,9 @@ script is self-contained — copy the block below and run it exactly as written
 #   4. before deleting, physically resolves each candidate's PARENT and refuses
 #      a symlinked parent, an agent whose physical parent is not the owned
 #      agents dir, or a wrapper whose physical parent is not its installer-
-#      recorded canonical parent — so a parent OR ancestor swapped for a symlink
-#      after install is refused rather than followed out of the namespace — then
+#      recorded canonical parent — so a parent OR ancestor swap that redirects
+#      the physical resolution away from the recorded owned identity is refused
+#      rather than followed out of the namespace — then
 #      deletes through the validated physical path only when its current sha256
 #      still matches the recorded one (modified-since-install is skipped, never
 #      deleted). This narrows but does not eliminate a leaf-and-ancestor

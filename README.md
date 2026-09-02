@@ -271,7 +271,11 @@ script is self-contained — copy the block below and run it exactly as written
 #      <copilot-home>/agents dir, and the wrapper only when its recorded path
 #      is a MEMBER of the installer-written allowlist — never a '*/mozart'
 #      basename match against any file named 'mozart' anywhere;
-#   4. deletes a validated file only when its current sha256 still matches the
+#   4. before deleting, physically resolves each candidate's PARENT and refuses
+#      a symlinked parent or (for an agent) a parent that is not the owned
+#      agents dir — so a parent swapped for a symlink after install cannot
+#      redirect a recorded path out of the namespace — then deletes through the
+#      validated physical path only when its current sha256 still matches the
 #      recorded one (modified-since-install is skipped, never deleted).
 #
 # It is self-contained: run `bash scripts/uninstall.sh` from a checkout, or
@@ -315,6 +319,19 @@ if [ -z "$copilot_phys" ]; then
 fi
 agents_prefix="$copilot_phys/agents"
 
+# Physically resolve the OWNED agents dir ONCE. The Pass-1 namespace test below
+# is lexical; that alone is not enough (sebastian HIGH-2). If <copilot-home>/
+# agents is itself a symlink — an attacker can swap it AFTER install to redirect
+# a recorded, checksum-matching path OUT of the namespace — it is NOT our dir:
+# agents_phys is left empty and no agent file becomes eligible for deletion
+# (fail closed). Otherwise agents_phys is the fully-resolved directory every
+# agent candidate's PHYSICAL parent must equal at delete time.
+if [ -L "$copilot_phys/agents" ]; then
+  agents_phys=""
+else
+  agents_phys="$(physical_dir "$copilot_phys/agents")" || agents_phys=""
+fi
+
 # The wrapper-location allowlist is the out-of-band authority (mode 0600, in
 # the 0700 mozart-trust dir) that a tampered manifest cannot reach. Absent or
 # a symlink -> no wrapper is eligible for deletion (fail closed).
@@ -339,6 +356,7 @@ EOF
 # delete (no partial deletes on a malformed or out-of-namespace line).
 del_paths=()
 del_shas=()
+del_kinds=()
 line_no=0
 while IFS= read -r line || [ -n "$line" ]; do
   line_no=$((line_no + 1))
@@ -365,15 +383,18 @@ while IFS= read -r line || [ -n "$line" ]; do
 
   # (c) namespace: a DIRECT child of the physical agents dir, OR a wrapper path
   # that is a MEMBER of the installer-written allowlist. No basename globbing.
+  # This is a LEXICAL classification only; Pass 2 physically re-validates the
+  # candidate's parent before deleting (sebastian HIGH-2).
   owned=0
+  kind=""
   case "$path" in
     "$agents_prefix"/*)
       rest="${path#"$agents_prefix"/}"
-      case "$rest" in */*) : ;; *) owned=1 ;; esac
+      case "$rest" in */*) : ;; *) owned=1; kind="agent" ;; esac
       ;;
   esac
   if [ "$owned" -eq 0 ] && is_allowed_wrapper "$path"; then
-    owned=1
+    owned=1; kind="wrapper"
   fi
   if [ "$owned" -eq 0 ]; then
     echo "REFUSED: manifest line $line_no path '$path' is outside the owned namespace (not a direct child of $agents_prefix and not an installer-recorded wrapper location); deleting nothing." >&2
@@ -382,6 +403,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 
   del_paths+=("$path")
   del_shas+=("$recorded_sha")
+  del_kinds+=("$kind")
 done < "$manifest"
 
 # ---- Pass 2: every line validated. Delete each still-present, still-identical
@@ -391,15 +413,39 @@ n=${#del_paths[@]}
 while [ "$i" -lt "$n" ]; do
   path="${del_paths[$i]}"
   recorded_sha="${del_shas[$i]}"
+  kind="${del_kinds[$i]}"
   i=$((i + 1))
   if [ ! -e "$path" ]; then echo "already gone: $path"; continue; fi
   if [ -L "$path" ]; then echo "REFUSED (is a symlink, not the file we installed): $path" >&2; continue; fi
-  cur="$(sha256_of "$path")"
+
+  # HIGH-2: Pass 1's namespace test is LEXICAL, so a parent swapped for a
+  # symlink AFTER install still passes it. Before deleting, refuse a symlinked
+  # immediate parent outright, physically resolve the parent, require an agent
+  # candidate's physical parent to equal the owned agents dir, and delete
+  # through the VALIDATED physical path — never through the lexical name whose
+  # parent may now redirect outside the namespace.
+  parent="${path%/*}"
+  if [ -L "$parent" ]; then
+    echo "REFUSED (parent directory is a symlink, would redirect outside the owned namespace): $path" >&2
+    continue
+  fi
+  parent_phys="$(physical_dir "$parent")" || parent_phys=""
+  if [ -z "$parent_phys" ]; then
+    echo "REFUSED (cannot physically resolve the parent directory, not ours to delete): $path" >&2
+    continue
+  fi
+  if [ "$kind" = "agent" ] && { [ -z "$agents_phys" ] || [ "$parent_phys" != "$agents_phys" ]; }; then
+    echo "REFUSED (physical parent '$parent_phys' is not the owned agents dir '$agents_phys', not ours to delete): $path" >&2
+    continue
+  fi
+  target="$parent_phys/${path##*/}"
+  if [ -L "$target" ]; then echo "REFUSED (resolves to a symlink, not the file we installed): $path" >&2; continue; fi
+  cur="$(sha256_of "$target")" || cur=""
   if [ -z "$cur" ] || [ "$cur" != "$recorded_sha" ]; then
     echo "REFUSED (modified since install, not ours to delete): $path" >&2
     continue
   fi
-  rm -f "$path" && echo "removed: $path"
+  rm -f "$target" && echo "removed: $path"
 done
 
 echo "uninstall complete. The bundle and manifest are left in place; remove them yourself if you want them gone:"

@@ -149,6 +149,44 @@ is_absurd_root() {
   return 1
 }
 
+# refuse_if_symlinked_containers LABEL PATH [LABEL PATH ...] — P13. Refuse,
+# before any byte is written, when a destination *container directory* is
+# itself a symlink, on both the --target and --user-scope branches. Every
+# symlinked container in the argument list is reported, so a single run names
+# them all.
+#
+# Distinct from the per-file [ -L ] collision matrix (below, in the
+# user-scope branch, and in the --target branch as of P14): that matrix
+# guards the leaf *files* being written and passes *vacuously* when the
+# container is the link, because every file then lands inside the link's
+# target and no per-file test ever fires. A symlinked container silently
+# redirects the whole install through the link — into /etc, a sibling repo,
+# anywhere it points. is_absurd_root does not catch this either: it compares
+# canonicalized *strings* against a fixed blocklist, so a <copilot-home> that
+# is a symlink to /etc/foo passes it and mkdir -p writes straight through.
+#
+# Fail closed and portable: the test is a plain POSIX [ -L ] type check with
+# no path resolution, so BSD/macOS and GNU agree (deliberately NOT readlink
+# -f / realpath, whose flags differ across the two). A symlink — including a
+# dangling one — is refused; nothing is followed, so an inconclusive resolve
+# can never be mistaken for "not a link".
+refuse_if_symlinked_containers() {
+  local blocks=()
+  local label path
+  while [ $# -gt 0 ]; do
+    label="$1"; path="$2"; shift 2
+    if [ -L "$path" ]; then
+      blocks+=("$label: $path")
+    fi
+  done
+  if [ "${#blocks[@]}" -gt 0 ]; then
+    echo "REFUSED: a destination container directory is a symlink; refusing to write through it (P13) — this would redirect the install into the link's target. Remove it and re-run if you intend to replace what it points to:" >&2
+    local b
+    for b in "${blocks[@]}"; do echo "  $b" >&2; done
+    exit 1
+  fi
+}
+
 usage() {
   cat >&2 <<'USAGE'
 usage: install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
@@ -298,6 +336,14 @@ if [ -n "$TARGET" ]; then
     fi
   fi
 
+  # P13 — refuse before any write when any of the four --target containers is
+  # a symlink (Y19a adds $TARGET itself and .github/agents to r1's two).
+  refuse_if_symlinked_containers \
+    "target repo root" "$TARGET" \
+    "target .github" "$TARGET/.github" \
+    "target bundle dir (.github/mozart)" "$TARGET/.github/mozart" \
+    "target agents dir (.github/agents)" "$TARGET/.github/agents"
+
   if [ "$APPLY" -eq 0 ]; then
     echo "[dry run] would install into $TARGET:"
     echo "  .github/agents/*.agent.md -> $TARGET/.github/agents/"
@@ -309,6 +355,14 @@ if [ -n "$TARGET" ]; then
   mkdir -p "$TARGET/.github/agents"
   cp "$REPO_ROOT"/.github/agents/*.agent.md "$TARGET/.github/agents/"
 
+  # P13/Y19b — this cp -R is a *merge* into an existing tree, so a nested
+  # pre-existing symlink inside the destination bundle (e.g. .github/mozart/
+  # config) would otherwise survive a reinstall and be written through.
+  # Remove the destination bundle directory first — that path only, never
+  # $TARGET, never .github — so the bundle is always rewritten from a clean
+  # slate. The container check above already refused if .github/mozart itself
+  # is the link; this handles links *inside* it.
+  rm -rf "$TARGET/.github/mozart"
   mkdir -p "$TARGET/.github/mozart"
   cp -R "$REPO_ROOT"/.github/mozart/. "$TARGET/.github/mozart/"
 
@@ -362,6 +416,26 @@ if is_absurd_root "$BIN_DIR"; then
 fi
 
 echo "Resolved Copilot home: $RESOLVED_COPILOT_HOME (source: $RESOLVED_COPILOT_HOME_SOURCE)"
+
+# P13 — refuse before any write when a user-scope container is a symlink
+# (Y19a adds <copilot-home> itself and <copilot-home>/agents to r1's two).
+# Only containers this invocation will actually write into are checked: the
+# bundle dir is skipped under --no-bundle, the wrapper bin dir under
+# --no-wrapper — refusing on a container we never touch would be a spurious
+# lockout, not a safety property. <copilot-home> and its agents dir are
+# always written (agents land there even under --no-bundle), so both are
+# always checked.
+CONTAINER_CHECKS=(
+  "Copilot home" "$RESOLVED_COPILOT_HOME"
+  "agents dir (<copilot-home>/agents)" "$RESOLVED_COPILOT_HOME/agents"
+)
+if [ "$NO_BUNDLE" -eq 0 ]; then
+  CONTAINER_CHECKS+=("bundle dir (<copilot-home>/mozart)" "$RESOLVED_COPILOT_HOME/mozart")
+fi
+if [ "$NO_WRAPPER" -eq 0 ]; then
+  CONTAINER_CHECKS+=("wrapper bin dir" "$BIN_DIR")
+fi
+refuse_if_symlinked_containers "${CONTAINER_CHECKS[@]}"
 
 SOURCE_VERSION="$(cat "$SOURCE_VERSION_FILE" 2>/dev/null || echo "unknown")"
 DEST_BUNDLE_VERSION_FILE="$RESOLVED_COPILOT_HOME/mozart/VERSION"
@@ -468,6 +542,11 @@ fi
 # --------------------------------------------------------------------------
 
 if [ "$NO_BUNDLE" -eq 0 ]; then
+  # P13/Y19b — merge copy; remove the destination bundle dir first (that path
+  # only, never <copilot-home>) so a nested pre-existing symlink inside it
+  # cannot survive a reinstall and be written through. The container check
+  # above already refused if <copilot-home>/mozart itself is the link.
+  rm -rf "$RESOLVED_COPILOT_HOME/mozart"
   mkdir -p "$RESOLVED_COPILOT_HOME/mozart"
   cp -R "$REPO_ROOT"/.github/mozart/. "$RESOLVED_COPILOT_HOME/mozart/"
 fi

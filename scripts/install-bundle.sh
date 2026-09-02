@@ -187,6 +187,98 @@ refuse_if_symlinked_containers() {
   fi
 }
 
+# --------------------------------------------------------------------------
+# Ownership manifest (D-I, P15). A persistent record of every file this
+# installer has ever written under the user's home, so the documented
+# uninstall (P20) can delete exactly what we own — and refuse anything else.
+# It lives OUTSIDE <copilot-home>/mozart/ (which `cp -R` overwrites on every
+# reinstall) at <copilot-home>/mozart-manifest.txt, mode 0600.
+#
+# Line format: "<sha256>  <absolute-path>" (two spaces). The recorded sha256
+# is what makes the uninstall safe: a file whose current hash no longer
+# matches has been replaced by the user or another project and MUST be left
+# alone. The manifest never shrinks (union-with-dedup) — a path an earlier
+# install wrote is preserved even when a later reinstall with different flags
+# (--no-wrapper, a changed --bin-dir) would not write it again. An orphaned
+# entry is a *skipped* delete at uninstall, never a wrong one.
+#
+# Portability: sha256 via `sha256sum` (GNU) or `shasum -a 256` (BSD/macOS);
+# first whitespace-delimited field via `awk`. No associative arrays (macOS
+# ships bash 3.2) — dedup is done with a linear membership test.
+# --------------------------------------------------------------------------
+
+sha256_of() {
+  # Hex sha256 of file "$1", or empty on failure (fail closed).
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  else
+    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+_path_in_list() {
+  local needle="$1"; shift
+  local x
+  for x in "$@"; do
+    [ "$x" = "$needle" ] && return 0
+  done
+  return 1
+}
+
+# write_manifest MANIFEST_PATH DEST_PATH... — union the paths written this run
+# into any prior manifest, refreshing the checksum for every path written this
+# run and preserving all prior entries whose path is not written this run.
+# Refuses (exit 2) any path containing a newline BEFORE touching the manifest —
+# the format is line-based and a forgeable manifest is an arbitrary-delete
+# primitive at uninstall. The file is (re)written 0600 every time; its content
+# is never even briefly world-readable (umask 077 around the write).
+write_manifest() {
+  local manifest="$1"; shift
+  local nl=$'\n'
+  local p
+  # 1. Newline rejection — fail closed before any read or write.
+  for p in "$@"; do
+    if [ "$p" != "${p//$nl/}" ]; then
+      echo "REFUSED: refusing to record a destination path containing a newline in the ownership manifest — it would forge the line-based format and become an arbitrary-delete primitive at uninstall: $p" >&2
+      exit 2
+    fi
+  done
+  # 2. An existing-but-unreadable manifest cannot be safely unioned; rewriting
+  #    it would orphan every prior entry. Fail closed rather than shrink it.
+  if [ -f "$manifest" ] && [ ! -r "$manifest" ]; then
+    echo "REFUSED: existing ownership manifest $manifest is unreadable — refusing to rewrite it, which would orphan the paths a prior install recorded." >&2
+    exit 2
+  fi
+  # 3. Preserve prior entries whose path is NOT written this run (union).
+  local merged="" line ppath
+  if [ -f "$manifest" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && continue
+      ppath="${line#*  }"
+      if ! _path_in_list "$ppath" "$@"; then
+        merged+="$line$nl"
+      fi
+    done < "$manifest"
+  fi
+  # 4. Fresh, checksummed entries for every path written this run.
+  local sum
+  for p in "$@"; do
+    sum="$(sha256_of "$p")"
+    if [ -z "$sum" ]; then
+      echo "REFUSED: could not compute sha256 for $p — refusing to write an unverifiable ownership-manifest entry." >&2
+      exit 2
+    fi
+    merged+="$sum  $p$nl"
+  done
+  # 5. Write 0600. umask keeps the content from existing world-readable even
+  #    momentarily; chmod re-asserts the mode on an already-present file.
+  local umask_old; umask_old="$(umask)"
+  umask 077
+  printf '%s' "$merged" > "$manifest"
+  umask "$umask_old"
+  chmod 0600 "$manifest"
+}
+
 usage() {
   cat >&2 <<'USAGE'
 usage: install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
@@ -597,6 +689,15 @@ done
 if [ "$NO_WRAPPER" -eq 0 ]; then
   chmod 0755 "$BIN_DIR/mozart"
 fi
+
+# P15/D-I — record ownership of exactly the shared-namespace files written
+# this run (agent definitions and, unless --no-wrapper, the CLI wrapper). The
+# bundle subtree under <copilot-home>/mozart/ is deliberately NOT tracked
+# here: it is this project's own directory, removed wholesale at uninstall,
+# never a per-file delete constrained by checksum. write_manifest unions with
+# any prior manifest, so a --no-wrapper or changed --bin-dir reinstall cannot
+# make an earlier-written path unrecoverable.
+write_manifest "$RESOLVED_COPILOT_HOME/mozart-manifest.txt" "${DEST_PATHS[@]}"
 
 # --------------------------------------------------------------------------
 # Post-install output — the grants, exactly (step 9).

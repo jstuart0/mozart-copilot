@@ -352,6 +352,37 @@ if [ -n "$TARGET" ]; then
     exit 0
   fi
 
+  # P14 — collision matrix for the shared <target>/.github/agents/ namespace,
+  # the --target twin of the user-scope matrix below. The collision namespace
+  # is the *target repo's* agents dir, NOT <copilot-home>/agents. The bundle
+  # subtree under .github/mozart/ is this project's own and governed by the
+  # VERSION downgrade guard above; agent files share a name any install could
+  # also write, so each is checked by byte-identity before anything is
+  # written. A dest that is itself a symlink is refused unconditionally (the
+  # container check covers the dir; this covers a leaf file). A non-identical
+  # existing file refuses unless --force-clobber (widened to --target in P12);
+  # a byte-identical file is a silent no-op.
+  T_SYMLINK_BLOCKS=()
+  T_COLLISIONS=()
+  for f in "$REPO_ROOT"/.github/agents/*.agent.md; do
+    d="$TARGET/.github/agents/$(basename "$f")"
+    if [ -L "$d" ]; then
+      T_SYMLINK_BLOCKS+=("$d")
+    elif [ -e "$d" ] && ! cmp -s "$f" "$d"; then
+      T_COLLISIONS+=("$d")
+    fi
+  done
+  if [ "${#T_SYMLINK_BLOCKS[@]}" -gt 0 ]; then
+    echo "REFUSED: the following destinations are symlinks; refusing to write through them — remove them and re-run if you intend to replace what they point to:" >&2
+    for p in "${T_SYMLINK_BLOCKS[@]}"; do echo "  $p" >&2; done
+    exit 1
+  fi
+  if [ "${#T_COLLISIONS[@]}" -gt 0 ] && [ "$FORCE_CLOBBER" -eq 0 ]; then
+    echo "REFUSED: the following destinations already exist in $TARGET/.github/agents and are not byte-identical to what this install would write — pass --force-clobber to overwrite them (this discards their current contents):" >&2
+    for p in "${T_COLLISIONS[@]}"; do echo "  $p" >&2; done
+    exit 1
+  fi
+
   mkdir -p "$TARGET/.github/agents"
   cp "$REPO_ROOT"/.github/agents/*.agent.md "$TARGET/.github/agents/"
 
@@ -366,7 +397,12 @@ if [ -n "$TARGET" ]; then
   mkdir -p "$TARGET/.github/mozart"
   cp -R "$REPO_ROOT"/.github/mozart/. "$TARGET/.github/mozart/"
 
-  echo "installed .github/agents (22 files) and .github/mozart (VERSION $SOURCE_VERSION) into $TARGET"
+  # P14/Y17 — honest roster count: report the number of agent files actually
+  # present in the destination after the copy, computed here, never a
+  # hardcoded constant that silently lies as personas are added or dropped.
+  # `wc -l | tr -d ' '` because BSD wc right-pads its count while GNU does not.
+  N_AGENTS=$(ls "$TARGET"/.github/agents/*.agent.md 2>/dev/null | wc -l | tr -d ' ')
+  echo "installed .github/agents ($N_AGENTS files) and .github/mozart (VERSION $SOURCE_VERSION) into $TARGET"
   exit 0
 fi
 

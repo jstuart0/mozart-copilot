@@ -509,6 +509,16 @@ def main(argv=None) -> int:
     if args.agents_dir and args.apply:
         print("usage error: --agents-dir is read-only and not valid with --apply (--apply remains repo-only)")
         return 2
+    # P6/Y6 modifier compatibility matrix: --upstream-readme is only meaningful
+    # with --check-tiers (data_cross_check_readme_vs_frontmatter runs solely
+    # under do_tiers). Supplying it with any other action would accept-and-
+    # discard it — the silently-ignored-modifier defect this campaign kills.
+    if args.upstream_readme is not None and not args.check_tiers:
+        print(
+            "usage error: --upstream-readme is only meaningful with --check-tiers "
+            "(the upstream README DATA cross-check runs solely under --check-tiers)"
+        )
+        return 2
 
     # Every read-only check below composes in one invocation instead of a
     # first-matching-flag-wins dispatch (the same class of bug as Phase 6's

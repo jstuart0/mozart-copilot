@@ -105,6 +105,14 @@ python3 scripts/check_agents.py --self-test
 python3 scripts/check_agents.py --min-agents <current roster size>
 ```
 
+`check_agents.py` runs every action flag you pass in one invocation and returns
+the highest-priority status (`1` > `2` > `0`); `--emit-runtime-reads` is
+mutually exclusive with all other actions. Modifier flags are accepted only with
+the actions that consume them — `--min-agents` with `--map`/`--check-install`,
+`--layout` with `--check-install`, `--upstream-mozart-md` with `--check-carve`,
+and `apply_models.py`'s `--upstream-readme` with `--check-tiers` — otherwise the
+run exits `2` naming both flags.
+
 If you changed a persona's output format, run it against a sample input and
 confirm the output matches the template. If you changed
 `.github/mozart/PIPELINE.md`, verify it stays consistent with

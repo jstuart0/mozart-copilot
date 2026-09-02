@@ -928,7 +928,11 @@ def _installed_ref_path(install_dir: Path, ref: str, layout: str) -> Path:
     return install_dir / ref[len(".github/"):]
 
 
-def cmd_check_install(dir_str: str, layout: str = "repo") -> int:
+def cmd_check_install(dir_str: str, layout: str = None) -> int:
+    # Parser default is None (P6/Y21, so an explicit --layout repo is
+    # distinguishable from no flag); the on-disk shapes only know 'repo'/'user'.
+    if layout is None:
+        layout = "repo"
     if not RUNTIME_READS_TSV.exists():
         print(f"NOTHING TO CHECK: {RUNTIME_READS_TSV.relative_to(REPO_ROOT)} not found — generated in Phase 5 (step 22)")
         return 2
@@ -1179,13 +1183,23 @@ def build_parser():
         help="validate a runtime-reads.tsv is fresh (defaults to the committed tests/runtime-reads.tsv; "
              "pass a path to check a scratch copy instead, e.g. for a staleness bite test)",
     )
-    p.add_argument("--check-install", metavar="DIR", help="validate an installed bundle copy against the manifest")
+    p.add_argument(
+        "--check-install",
+        nargs="?",
+        const=".",
+        default=None,
+        metavar="DIR",
+        help="validate an installed bundle copy against the manifest (defaults to the current "
+             "repo '.', i.e. the repo-layout install of itself)",
+    )
     p.add_argument(
         "--layout",
         choices=INSTALL_LAYOUTS,
-        default="repo",
-        help="with --check-install: 'repo' (default, .github/agents + .github/mozart) or "
-             "'user' (agents/ + mozart/, the Copilot CLI user-scope shape)",
+        default=None,
+        help="with --check-install: 'repo' (default when omitted, .github/agents + .github/mozart) or "
+             "'user' (agents/ + mozart/, the Copilot CLI user-scope shape). Default is None so an "
+             "explicitly-supplied '--layout repo' is distinguishable from no flag (P6/Y21); "
+             "cmd_check_install treats None as 'repo'.",
     )
     p.add_argument(
         "--check-carve",
@@ -1204,6 +1218,61 @@ def build_parser():
     )
     p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
     return p
+
+
+def validate_modifier_matrix(args) -> int:
+    """P6 modifier compatibility matrix. Reject a modifier flag supplied
+    alongside an action that does not consume it — rather than accepting and
+    silently discarding it, which is H1's twin (the campaign that exists to
+    kill silently-ignored flags must not reintroduce one). Runs after parsing,
+    before any dispatch. Returns 2 to reject, 0 to continue.
+
+    The matrix (modifier -> the actions that consume it):
+      --min-agents         -> --map, --check-install (and the default,
+                              no-action roster validate-all, which also reads it)
+      --layout             -> --check-install only
+      --upstream-mozart-md -> --check-carve only
+
+    --agents-dir is not a check_agents.py flag until Phase P9; until then it is
+    rejected upstream by argparse as an unrecognized argument (also exit 2),
+    which is what backstops Y20's --emit-runtime-reads --agents-dir case here."""
+    action_flags = {
+        "--self-test": bool(args.self_test),
+        "--file": bool(args.file),
+        "--map": bool(args.map),
+        "--emit-runtime-reads": bool(args.emit_runtime_reads),
+        "--check-doc-refs": bool(args.check_doc_refs),
+        "--check-install": bool(args.check_install),
+        "--check-carve": bool(args.check_carve),
+        "--check-doc-table": bool(args.check_doc_table),
+    }
+    active = {name for name, present in action_flags.items() if present}
+
+    def enforce(modifier, consumed_by, default_consumes) -> int:
+        if active & set(consumed_by):
+            return 0
+        if not active and default_consumes:
+            return 0
+        got = ", ".join(sorted(active)) if active else "no action"
+        print(
+            f"usage error: {modifier} is only meaningful with "
+            f"{' or '.join(consumed_by)}; got {got}"
+        )
+        return 2
+
+    if args.min_agents is not None:
+        rc = enforce("--min-agents", ["--map", "--check-install"], default_consumes=True)
+        if rc:
+            return rc
+    if args.layout is not None:
+        rc = enforce("--layout", ["--check-install"], default_consumes=False)
+        if rc:
+            return rc
+    if args.upstream_mozart_md is not None:
+        rc = enforce("--upstream-mozart-md", ["--check-carve"], default_consumes=False)
+        if rc:
+            return rc
+    return 0
 
 
 def reduce_statuses(statuses) -> int:
@@ -1249,6 +1318,13 @@ def main(argv=None) -> int:
     if args.forms and not args.self_test:
         print("usage error: --forms requires --self-test")
         return 2
+
+    # P6 modifier compatibility matrix — validated after parsing, before any
+    # dispatch, so an irrelevant modifier is rejected (exit 2) rather than
+    # silently discarded.
+    rc = validate_modifier_matrix(args)
+    if rc:
+        return rc
 
     # --emit-runtime-reads exclusivity (W7a) — checked before any action runs.
     if args.emit_runtime_reads:

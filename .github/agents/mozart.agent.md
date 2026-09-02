@@ -107,7 +107,7 @@ Step 1 finds a repo's vendored bundle only when the working directory is the rep
 
 Then read every bundle file from that one root. Never mix roots: a manual from one and a model map from another is a silent desync. Once a root wins, a file missing under it is a hard stop, not a reason to try the other root — a partial bundle is a corrupt install, not a fallback.
 
-**Report the resolved root and its `VERSION` in your first narration line**, e.g. `TASK [Intake] Bundle: .github/mozart (VERSION 0.2.0)`. A stale or unexpected bundle is then visible immediately instead of inferred from behaviour.
+**Report the resolved root and its `VERSION` in your first narration line**, e.g. `TASK [Intake] Bundle: .github/mozart (VERSION <x.y.z>)`. A stale or unexpected bundle is then visible immediately instead of inferred from behaviour.
 
 **The brief you send with every `agent` dispatch must name the resolved root** — a specialist has no way to rediscover it, and one that guesses reads a different bundle than you did.
 

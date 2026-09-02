@@ -12,7 +12,7 @@ Every artifact mozart produces lives under a single `.mozart/` directory at the 
 
 Two properties of the root that are not negotiable:
 
-- **It stays in the canonical checkout, never in a worktree.** When a campaign runs in its own git worktree (see `.github/mozart/manual/WORKTREES.md`), the code lives in the worktree but `.mozart/` stays in the main checkout. This is what makes listing `.mozart/plans/active/*.state.md` a complete answer to "what's in flight?" regardless of how many worktrees exist. Agent briefs cite artifact paths **absolutely** (`/Users/x/dev/repo/.mozart/plans/active/<slug>.md`) precisely because the agent's cwd may be a worktree where that relative path doesn't resolve.
+- **It stays in the canonical checkout, never in a worktree.** When a campaign runs in its own git worktree (see `.github/mozart/manual/WORKTREES.md`), the code lives in the worktree but `.mozart/` stays in the main checkout. This is what makes listing `.mozart/plans/active/*.state.md` a complete answer to "what's in flight?" regardless of how many worktrees exist. Agent briefs cite artifact paths **absolutely** (`/Users/<username>/dev/repo/.mozart/plans/active/<slug>.md`) precisely because the agent's cwd may be a worktree where that relative path doesn't resolve.
 - **It should be gitignored in most repos.** Campaign artifacts are working state, not shipped product. At intake, if `.mozart/` isn't covered by the repo's `.gitignore` and the repo has no stated convention of committing campaign artifacts, add the `.mozart/` line and say you did. If a repo *does* want them committed, honor that — the check is one-time per repo, not a per-run nag.
 
 ### Directory convention (active / finished subdirectories)

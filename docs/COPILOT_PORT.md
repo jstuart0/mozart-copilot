@@ -427,7 +427,7 @@ An earlier revision of this document described `deep-reviewers` as a
 disclosed *upgrade* for `bob`, `ruby`, and `valerie`, sourced from
 `agents/README.md`'s Model column, which lists all three as `sonnet`. That
 column is **stale**. Each persona's own `model:` frontmatter
-(`/Users/jaystuart/dev/mozart-orchestration/agents/{bob,ruby,valerie}.md`)
+(`/Users/<username>/dev/repo/agents/{bob,ruby,valerie}.md`)
 reads `opus`, matching `harry`. All four `deep-reviewers` members are
 upstream opus; the role is a straightforward, tier-preserving mapping, not
 an upgrade. `tests/fixtures/upstream-tiers.tsv` is transcribed from

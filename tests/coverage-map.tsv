@@ -1,5 +1,5 @@
 # coverage-map.tsv — the mozart.md carve, asserted total by lines AND characters (step 21).
-# Source: /Users/jaystuart/dev/mozart-orchestration/agents/mozart.md, body lines 7-2400
+# Source: /Users/<username>/dev/repo/agents/mozart.md, body lines 7-2400
 # (the two-delimiter extractor's output — see docs/COPILOT_PORT.md).
 # Columns: start_line	end_line	chars	destination
 # expected_chars=241189

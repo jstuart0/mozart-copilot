@@ -612,6 +612,39 @@ def validate_agent_file(path: Path) -> ValidationResult:
 # --self-test
 # --------------------------------------------------------------------------
 
+# Every negative fixture must be rejected for a DECLARED reason, not merely
+# exit nonzero — a fixture that fails for an unrelated cause is a green test
+# proving nothing (H5a). Each value is a substring that MUST appear in that
+# fixture's own --file error output and MUST NOT appear in any other fixture's
+# (the cross-contamination pass in run_self_test proves the table is not a
+# tautology). Substrings are copied verbatim from live --file output, never
+# guessed. Adding a tests/fixtures/invalid-*.agent.md file without adding its
+# row here fails the self-test — you cannot ship a negative fixture without
+# declaring why it must be rejected.
+REJECT_REASONS = {
+    "invalid-agent-tool-without-agents.agent.md": "'agent' is in 'tools' but frontmatter 'agents' is empty",
+    "invalid-agents-without-agent-tool.agent.md": "frontmatter 'agents' is non-empty but 'agent' is not in 'tools'",
+    "invalid-copilot-home-file-path.agent.md": "('$COPILOT_HOME/mozart/m')",
+    "invalid-model-array.agent.md": "frontmatter 'model' is a YAML sequence, not a scalar string",
+    "invalid-name-mismatch.agent.md": "does not match filename stem 'invalid-name-mismatch'",
+    "invalid-no-attestation.agent.md": "body has no 'MODEL-ATTESTATION' marker",
+    "invalid-no-description.agent.md": "frontmatter 'description' is missing or empty",
+    "invalid-no-frontmatter.agent.md": "missing opening '---' delimiter on line 1",
+    "invalid-no-model.agent.md": "frontmatter 'model' is missing",
+    "invalid-no-name.agent.md": "frontmatter 'name' is missing or empty",
+    "invalid-no-tools.agent.md": "frontmatter 'tools' is missing",
+    "invalid-non-mozart-dispatch-authority.agent.md": "'invalid-non-mozart-dispatch-authority' holds the 'agent' tool",
+    "invalid-outside-bundle-read.agent.md": "references 'PIPELINE.md' without the '.github/mozart/' bundle prefix",
+    "invalid-oversize-body.agent.md": "exceeds the 30000-char cap",
+    "invalid-two-user-invocable.agent.md": "'user-invocable: true' is set, but only 'mozart' may be user-invocable",
+    "invalid-unclosed-frontmatter.agent.md": "unclosed frontmatter: no closing '---' delimiter found",
+    "invalid-unknown-tool.agent.md": "tools entry 'Bash' is not a member of config/toolsets.jsonc",
+    "invalid-unquoted-colon-description.agent.md": "key 'description' is an unquoted value containing ': '",
+    "invalid-user-bundle-file-path.agent.md": "('.copilot/mozart/m')",
+    "invalid-user-bundle-shell-copy.agent.md": "shell-copies from the user-scope bundle root at command position",
+}
+
+
 def run_self_test(forms: bool) -> int:
     print(yaml_crosscheck_mode_note())
     ok = True
@@ -635,7 +668,7 @@ def run_self_test(forms: bool) -> int:
         print(f"accept: {p.relative_to(REPO_ROOT)}{tag}")
         return True
 
-    def check_reject(p: Path) -> bool:
+    def check_reject(p: Path, expect_substring: str) -> bool:
         nonlocal ok
         if not p.exists():
             print(f"MISSING fixture: {p.relative_to(REPO_ROOT)}")
@@ -646,7 +679,15 @@ def run_self_test(forms: bool) -> int:
             print(f"FAIL (expected REJECT): {p.relative_to(REPO_ROOT)} — validator accepted it")
             ok = False
             return False
-        print(f"reject: {p.relative_to(REPO_ROOT)} — {'; '.join(r.errors)}")
+        joined = "; ".join(r.errors)
+        if expect_substring not in joined:
+            print(
+                f"FAIL (rejected for the WRONG reason): {p.relative_to(REPO_ROOT)} — "
+                f"expected substring {expect_substring!r} not in: {joined}"
+            )
+            ok = False
+            return False
+        print(f"reject: {p.relative_to(REPO_ROOT)} — {joined}")
         return True
 
     check_accept(FIXTURES_DIR / "valid.agent.md")
@@ -657,7 +698,39 @@ def run_self_test(forms: bool) -> int:
         print("FAIL: no tests/fixtures/invalid-*.agent.md fixtures found")
         ok = False
     for p in invalid_fixtures:
-        check_reject(p)
+        reason = REJECT_REASONS.get(p.name)
+        if reason is None:
+            print(
+                f"FAIL: no REJECT_REASONS entry for {p.name} — a negative fixture "
+                f"cannot be added without declaring why it must be rejected (H5a)"
+            )
+            ok = False
+            continue
+        check_reject(p, reason)
+
+    # Cross-contamination: prove no fixture's error output also satisfies
+    # another fixture's declared substring. Without this the table could pass
+    # while every fixture actually fails for one shared unrelated reason — a
+    # tautology (H5a). Only tabled, on-disk fixtures participate.
+    errors_by_fixture = {
+        p.name: "; ".join(validate_agent_file(p).errors)
+        for p in invalid_fixtures
+        if p.name in REJECT_REASONS and p.exists()
+    }
+    contaminated = False
+    for name, text in errors_by_fixture.items():
+        for other_name, other_sub in REJECT_REASONS.items():
+            if other_name == name:
+                continue
+            if other_sub in text:
+                print(
+                    f"FAIL cross-contamination: {name} output also satisfies "
+                    f"{other_name}'s substring {other_sub!r}"
+                )
+                contaminated = True
+                ok = False
+    if not contaminated:
+        print("cross-contamination: none")
 
     if forms:
         forms_dir = FIXTURES_DIR / "forms"
@@ -668,7 +741,8 @@ def run_self_test(forms: bool) -> int:
         for p in form_fixtures:
             check_accept(p)
         # unclosed '---' rejected — reuses the shared negative fixture
-        check_reject(FIXTURES_DIR / "invalid-unclosed-frontmatter.agent.md")
+        unclosed = "invalid-unclosed-frontmatter.agent.md"
+        check_reject(FIXTURES_DIR / unclosed, REJECT_REASONS[unclosed])
 
     print(f"\nself-test: {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1

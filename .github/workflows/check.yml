@@ -212,9 +212,9 @@ jobs:
           bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "expected exit 1 for the symlinked trust dir, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'trust dir' out.txt || { echo "missing trust-dir symlink refusal message" >&2; cat out.txt; exit 1; }
-          [ -e "$CH/mozart/VERSION" ] && { echo "bundle was written despite the refusal (not fail-before-write)" >&2; exit 1; } || true
-          [ -d "$CH/agents" ] && { echo "agents dir was written despite the refusal (not fail-before-write)" >&2; exit 1; } || true
-          [ -e "$B/mozart" ] && { echo "wrapper was written despite the refusal (not fail-before-write)" >&2; exit 1; } || true
+          if [ -e "$CH/mozart/VERSION" ]; then echo "bundle was written despite the refusal (not fail-before-write)" >&2; exit 1; fi
+          if [ -d "$CH/agents" ]; then echo "agents dir was written despite the refusal (not fail-before-write)" >&2; exit 1; fi
+          if [ -e "$B/mozart" ]; then echo "wrapper was written despite the refusal (not fail-before-write)" >&2; exit 1; fi
           echo "ok: refusal left no artifacts"
 
       - name: Install-check — temp writes use unpredictable names, not predictable *.tmp.\$\$ (sebastian HIGH-5)
@@ -243,7 +243,7 @@ jobs:
           removed=$(grep -c '^removed:' out.txt)
           if [ "$removed" -ne "$((before + 1))" ]; then echo "expected $((before + 1)) removals (agents + wrapper), got $removed" >&2; cat out.txt; exit 1; fi
           [ -d "$CH/agents" ] && [ -z "$(ls -A "$CH/agents")" ] || { echo "agents dir not emptied" >&2; exit 1; }
-          [ -e "$B/mozart" ] && { echo "wrapper not removed" >&2; exit 1; } || true
+          if [ -e "$B/mozart" ]; then echo "wrapper not removed" >&2; exit 1; fi
           [ -f "$CH/mozart/VERSION" ] || { echo "bundle was removed (should be left in place)" >&2; exit 1; }
           [ -f "$CH/mozart-manifest.txt" ] || { echo "manifest was removed (should be left in place)" >&2; exit 1; }
 
@@ -328,7 +328,7 @@ jobs:
           bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
           evil3="$(mktemp -d)"; mkdir -p "$evil3/bin"; cp "$B/mozart" "$evil3/bin/mozart"
           rm -rf "$BASE/root"; ln -s "$evil3" "$BASE/root"
-          [ -L "$B" ] && { echo "test setup wrong: immediate parent bin must NOT be a symlink" >&2; exit 1; } || true
+          if [ -L "$B" ]; then echo "test setup wrong: immediate parent bin must NOT be a symlink" >&2; exit 1; fi
           COPILOT_HOME="$CH" bash scripts/uninstall.sh > out3.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 0 ]; then echo "expected exit 0 (skip, not fatal), got $rc" >&2; cat out3.txt; exit 1; fi
           grep -qF 'installer-recorded wrapper parent' out3.txt || { echo "missing recorded-parent refusal for a swapped wrapper GRANDPARENT" >&2; cat out3.txt; exit 1; }
@@ -356,9 +356,9 @@ jobs:
           # assertion runs. Capture grep's status explicitly and accept ONLY
           # status 1 as the expected-zero match — distinguish it from a genuine
           # grep error (missing/unreadable out.txt, an execution failure), which
-          # is a hard failure rather than a suppressed verification. A bare
-          # `|| true` would also swallow those errors and leave `removed` empty,
-          # weakening the `-ne 0` count assertion that still fires below.
+          # is a hard failure rather than a suppressed verification. Blanket
+          # error suppression would also swallow those errors and leave `removed`
+          # empty, weakening the `-ne 0` count assertion that still fires below.
           removed=$(grep -c '^removed:' out.txt) && rc=0 || rc=$?
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then echo "grep -c '^removed:' failed on out.txt (rc=$rc)" >&2; cat out.txt; exit 1; fi
           if [ "$removed" -ne 0 ]; then echo "a hash failure still deleted $removed file(s)" >&2; cat out.txt; exit 1; fi
@@ -419,7 +419,7 @@ jobs:
           COPILOT_HOME="$CH" bash scripts/install-bundle.sh --target "$tdir" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing a trailing-newline root, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'control character' out.txt || { echo "missing control-char refusal for one trailing newline" >&2; cat out.txt; exit 1; }
-          [ -e "$CH/mozart-trust/roots" ] && { echo "trust roots written despite the refusal" >&2; exit 1; } || true
+          if [ -e "$CH/mozart-trust/roots" ]; then echo "trust roots written despite the refusal" >&2; exit 1; fi
           # multiple trailing newlines.
           W2="$(mktemp -d)"; tdir2="$W2/victim${nl}${nl}"; mkdir -p "$tdir2/.github"
           CH2="$(mktemp -d)/.copilot"; mkdir -p "$CH2"
@@ -446,32 +446,32 @@ jobs:
           COPILOT_HOME="$CH" bash scripts/install-bundle.sh --target "$T" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "[target/trust-file] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'is not a directory' out.txt || { echo "[target/trust-file] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
-          [ -d "$T/.github/agents" ] && { echo "[target/trust-file] agents mutated before refusal" >&2; exit 1; } || true
+          if [ -d "$T/.github/agents" ]; then echo "[target/trust-file] agents mutated before refusal" >&2; exit 1; fi
           # (2) --user-scope: DIRECTORY at the manifest path -> refuse, nothing written.
           H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH/mozart-manifest.txt"
           bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "[user/manifest-dir] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'is not a regular file' out.txt || { echo "[user/manifest-dir] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
-          [ -e "$CH/mozart/VERSION" ] && { echo "[user/manifest-dir] bundle mutated before refusal" >&2; exit 1; } || true
-          [ -e "$B/mozart" ] && { echo "[user/manifest-dir] wrapper mutated before refusal" >&2; exit 1; } || true
+          if [ -e "$CH/mozart/VERSION" ]; then echo "[user/manifest-dir] bundle mutated before refusal" >&2; exit 1; fi
+          if [ -e "$B/mozart" ]; then echo "[user/manifest-dir] wrapper mutated before refusal" >&2; exit 1; fi
           # (3) --user-scope: regular file at mozart-trust -> refuse, no agents dir.
           H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH"; : > "$CH/mozart-trust"
           bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "[user/trust-file] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'is not a directory' out.txt || { echo "[user/trust-file] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
-          [ -d "$CH/agents" ] && { echo "[user/trust-file] agents mutated before refusal" >&2; exit 1; } || true
+          if [ -d "$CH/agents" ]; then echo "[user/trust-file] agents mutated before refusal" >&2; exit 1; fi
           # (4) --user-scope: DIRECTORY at mozart-trust/roots -> refuse.
           H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH/mozart-trust/roots"
           bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "[user/roots-dir] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'is not a regular file' out.txt || { echo "[user/roots-dir] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
-          [ -d "$CH/agents" ] && { echo "[user/roots-dir] agents mutated before refusal" >&2; exit 1; } || true
+          if [ -d "$CH/agents" ]; then echo "[user/roots-dir] agents mutated before refusal" >&2; exit 1; fi
           # (5) --user-scope: DIRECTORY at mozart-trust/wrapper-paths -> refuse.
           H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH/mozart-trust/wrapper-paths"
           bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "[user/wrapper-dir] expected exit 1, got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'is not a regular file' out.txt || { echo "[user/wrapper-dir] missing wrong-type refusal" >&2; cat out.txt; exit 1; }
-          [ -e "$B/mozart" ] && { echo "[user/wrapper-dir] wrapper mutated before refusal" >&2; exit 1; } || true
+          if [ -e "$B/mozart" ]; then echo "[user/wrapper-dir] wrapper mutated before refusal" >&2; exit 1; fi
 
       - name: Uninstall — README block is byte-identical to scripts/uninstall.sh
         # The README ships a self-contained copy of the uninstall so a user

@@ -2,7 +2,7 @@
 name: valerie
 description: Senior verification engineer who confirms that shipped work matches the plan it was built from. Use after a feature is implemented to audit the diff against the original plan document — verifying every step landed, no scope crept in, every promised verification was performed, and nothing on the "out of scope" list snuck in. Reports either a clean signoff or a punch list of gaps to close.
 tools: [read, search, execute]
-model: claude-opus-4.5
+model: claude-opus-5
 agents: []
 user-invocable: false
 ---

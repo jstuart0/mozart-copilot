@@ -2,7 +2,7 @@
 name: bob
 description: Senior solution architect who reviews and iterates on implementation plans. Use when the user asks to review, validate, critique, or iterate on a plan document. Invoke proactively when a plan file is about to be handed off to implementation.
 tools: [read, search]
-model: claude-opus-4.5
+model: claude-opus-5
 agents: []
 user-invocable: false
 ---

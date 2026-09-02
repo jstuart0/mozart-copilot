@@ -398,13 +398,13 @@ would silently re-tier someone:
 
 | role | claude-bulk (shipped active map) | gpt-bulk |
 |---|---|---|
-| `conductor` | Claude Opus 4.5 | GPT-5.4 |
-| `deep-reviewers` | Claude Opus 4.5 | GPT-5.4 |
+| `conductor` | Claude Opus 5 | GPT-5.4 |
+| `deep-reviewers` | Claude Opus 5 | GPT-5.4 |
 | `builders` | Claude Sonnet 4.5 | GPT-5.3-Codex |
 | `reviewers` | Claude Sonnet 4.5 | GPT-5.3-Codex |
 | `support` | Claude Sonnet 4.5 | GPT-5.3-Codex |
 | `fast-scan` | Claude Haiku 4.5 | GPT-5.4-mini |
-| `validation` | **GPT-5.4** | **Claude Opus 4.5** |
+| `validation` | **GPT-5.4** | **Claude Opus 5** |
 
 Flip the entire roster's family with one command, and `validation` flips
 with it, in the opposite direction, automatically — that's the whole point
@@ -412,7 +412,7 @@ of shipping the switch as two presets rather than one hand-edited map:
 
 ```sh
 python3 scripts/apply_models.py --preset claude-bulk --apply   # 21 builders/reviewers on Anthropic, sebastian on GPT-5.4
-python3 scripts/apply_models.py --preset gpt-bulk --apply      # 21 builders/reviewers on OpenAI,    sebastian on Claude Opus 4.5
+python3 scripts/apply_models.py --preset gpt-bulk --apply      # 21 builders/reviewers on OpenAI,    sebastian on Claude Opus 5
 ```
 
 `apply_models.py --check-families` exits 1 the moment `roles.validation.family
@@ -453,7 +453,7 @@ Every role also carries a same-family `fallback`, surfaced by
 global model policy went GA 2026-08-26).
 
 - `jackson` — role `builders` → `claude-sonnet-4.5`
-- `bob` — role `deep-reviewers` → `claude-opus-4.5` (upstream opus, exact match)
+- `bob` — role `deep-reviewers` → `claude-opus-5` (upstream opus, exact match)
 - `sebastian` — role `validation` → `gpt-5.4` (the non-builder family, D8)
 
 ## Model attestation

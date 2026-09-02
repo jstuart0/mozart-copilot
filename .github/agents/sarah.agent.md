@@ -2,7 +2,7 @@
 name: sarah
 description: Senior technical researcher who finds the most current, evidence-backed answer to "how is this done well in 2026, and is something already built that we can use or model after?" Use before planning when the task involves an unfamiliar domain, a library/pattern decision, a "best practices" framing, a "what's the modern way to X" question, or anywhere prior art (in the codebase or in the wider ecosystem) would change the plan. Returns a concise research brief with citations and a recommendation — never writes production code.
 tools: [read, search, web]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

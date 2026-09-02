@@ -2,7 +2,7 @@
 name: tessa
 description: Senior test engineer who reviews test strategy and quality — what's mocked vs real, where the boundary cases are, whether tests prove the contract or just exercise the implementation. Use at plan review when the plan introduces non-trivial logic (parsers, state machines, validators, business rules, API handlers, RAG retrievers/scorers). Use mid-build when a phase produces test code that warrants a quality lens. In TDD mode, produces the test contract the plan and implementation are written against. Read-only on source code and test code; writes findings inline and (in TDD mode) the test contract document. Skip on infra-only, manifest-only, doc-only, or trivial-rename phases.
 tools: [read, search, execute, edit]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

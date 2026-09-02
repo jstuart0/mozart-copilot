@@ -248,6 +248,42 @@ jobs:
           if [ "$rc" -ne 1 ]; then echo "--map should still consume --agents-dir (expected exit 1), got $rc — $out" >&2; exit 1; fi
           printf '%s\n' "$out" | grep -qF 'tests/fixtures/roster-floor-agents' || { echo "--map did not walk the overridden roster — $out" >&2; exit 1; }
 
+      - name: Live-model-ID gate bites through all read entry points and refuses at the write path (Phase P10B, R1)
+        # R1 / D-K: the shipped maps assigned roles to model IDs the harness no
+        # longer offers (verified live in stage 4 — xander/dexter/tessa failed to
+        # launch). check_model_ids is wired into all three READ entry points
+        # (check_agents.py --map, apply_models.py --validate-map, --check) and the
+        # cmd_stamp WRITE refusal (xander M1). This step drifts a map to a dead ID
+        # and proves each entry point rejects it (W7b: exact exit 1, offending
+        # value named), then drifts the real preset and proves --preset --apply
+        # refuses without writing one byte.
+        run: |
+          M="$(mktemp -d)/m.jsonc"
+          sed 's/"claude-sonnet-5"/"claude-sonnet-9.9"/' config/model-maps/claude-bulk.jsonc > "$M"
+          out=$(python3 scripts/apply_models.py --validate-map "$M" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "validate-map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'claude-sonnet-9.9' || { echo "gate did not name the offending value — $out" >&2; exit 1; }
+          out=$(python3 scripts/check_agents.py --map "$M" --min-agents 22 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          mmbak="$(mktemp)"
+          cp .github/mozart/config/model-map.jsonc "$mmbak"
+          sed 's/"claude-sonnet-5"/"claude-sonnet-9.9"/' "$mmbak" > .github/mozart/config/model-map.jsonc
+          out=$(python3 scripts/apply_models.py --check 2>&1) && rc=0 || rc=$?
+          cp "$mmbak" .github/mozart/config/model-map.jsonc
+          if [ "$rc" -ne 1 ]; then echo "apply --check: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          F="$(mktemp -d)/f.jsonc"
+          sed 's/"gpt-5.6-sol"/"claude-opus-5"/' config/model-maps/claude-bulk.jsonc > "$F"
+          out=$(python3 scripts/apply_models.py --validate-map "$F" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "family mislabel: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'family' || { echo "family mislabel not reported — $out" >&2; exit 1; }
+          cbbak="$(mktemp)"
+          cp config/model-maps/claude-bulk.jsonc "$cbbak"
+          sed 's/"claude-sonnet-5"/"claude-sonnet-9.9"/' "$cbbak" > config/model-maps/claude-bulk.jsonc
+          python3 scripts/apply_models.py --preset claude-bulk --apply && wrc=0 || wrc=$?
+          cp "$cbbak" config/model-maps/claude-bulk.jsonc
+          if [ "$wrc" -eq 0 ]; then echo "write path did NOT refuse a dead ID" >&2; exit 1; fi
+          git diff --quiet -- .github/agents .github/mozart/config || { echo "write path wrote bytes on a refusal" >&2; exit 1; }
+
       - name: Every shipped preset validates structurally (Phase P10)
         # The plan's prose says "five presets"; the shipped set is currently TWO
         # (claude-bulk, gpt-bulk). The glob is the authority, not the prose —

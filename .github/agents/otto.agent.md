@@ -2,7 +2,7 @@
 name: otto
 description: Senior infrastructure / Kubernetes / ops engineer who reviews infra-as-code (Kubernetes manifests, Helm charts, Ingress, Services, NetworkPolicies, RBAC, persistent volumes, namespaces, deployment ordering) for safety, posture, and production-readiness. Use when a plan or slice touches `manifests/`, `*.yaml` with k8s kinds, Helm values, k8s RBAC, network configuration, or any deployment surface. Returns severity-tagged findings with file:line citations. Read-only.
 tools: [read, search, execute]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

@@ -42,6 +42,7 @@ from check_agents import (  # noqa: E402
     REPO_ROOT,
     FrontmatterError,
     agent_stem,
+    check_model_ids,
     discover_agent_files,
     load_jsonc,
     rel_or_abs,
@@ -312,6 +313,11 @@ def cmd_check(path_str=None, agents_dir: Path = None) -> int:
     struct_errors = validate_map_structure(m, agents_dir)
     for e in struct_errors:
         print(f"FAIL: {e}")
+    # R1 live-model-ID gate (kept separate from validate_map_structure per
+    # D-B.2; absolute, not preset-relative, so safe on every map).
+    model_errors = check_model_ids(m)
+    for e in model_errors:
+        print(f"FAIL: {e}")
 
     diffs, diff_errors = compute_diffs(m, agents_dir)
     for e in diff_errors:
@@ -319,7 +325,7 @@ def cmd_check(path_str=None, agents_dir: Path = None) -> int:
     for f, stem, old, new in diffs:
         print(f"DRIFT {rel_or_abs(f)}: model: {old} != map's {new!r} for role of '{stem}'")
 
-    return 1 if (struct_errors or diff_errors or diffs) else 0
+    return 1 if (struct_errors or model_errors or diff_errors or diffs) else 0
 
 
 def cmd_stamp(apply: bool, preset: str) -> int:
@@ -340,8 +346,9 @@ def cmd_stamp(apply: bool, preset: str) -> int:
             return 1
         preset_family_errors = check_families(preset_map)
         preset_tier_errors = check_tiers(preset_map)
-        if preset_family_errors or preset_tier_errors:
-            for e in preset_family_errors + preset_tier_errors:
+        preset_model_errors = check_model_ids(preset_map)
+        if preset_family_errors or preset_tier_errors or preset_model_errors:
+            for e in preset_family_errors + preset_tier_errors + preset_model_errors:
                 print(f"FAIL: preset '{preset}': {e}")
             print(f"refusing to stamp: preset '{preset}' fails validation (see above) — the canonical map is left unchanged")
             return 1
@@ -365,12 +372,16 @@ def cmd_stamp(apply: bool, preset: str) -> int:
     # Refuse to stamp a map that fails an invariant, whether or not it just
     # arrived via --preset. Structural validity alone isn't enough — a
     # structurally-fine preset can still violate D8 (same-family
-    # validation) or silently retier someone; catch both before any
+    # validation), silently retier someone, or carry a dead / mislabeled
+    # model ID (R1 / xander M1: without check_model_ids here, --preset … --apply
+    # would copy a dead ID into the canonical map and stamp it into 22
+    # personas while the read-path gate watched). Catch all three before any
     # frontmatter write, not after.
     family_errors = check_families(m)
     tier_errors = check_tiers(m)
-    if family_errors or tier_errors:
-        for e in family_errors + tier_errors:
+    model_errors = check_model_ids(m)
+    if family_errors or tier_errors or model_errors:
+        for e in family_errors + tier_errors + model_errors:
             print(f"FAIL: {e}")
         print("refusing to stamp: the active map fails validation (see above)")
         return 1
@@ -411,6 +422,10 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path
         return 1
 
     all_errors = list(validate_map_structure(m, agents_dir))
+    # R1 live-model-ID gate — always runs (absolute validity, not a modifier),
+    # so --validate-map with no flags still rejects a dead ID or a family
+    # mislabel. Kept a separate function from validate_map_structure per D-B.2.
+    all_errors += check_model_ids(m)
     if do_families:
         all_errors += check_families(m)
     if do_tiers:

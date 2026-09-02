@@ -1,9 +1,21 @@
-// Negative fixture for apply_models.py --validate-map --check-tiers (Phase 6).
-// codebase-locator is upstream haiku (role 'fast-scan'); this map silently
-// retiers it up to 'builders' (sonnet tier) — an undisclosed upgrade.
-// --check-tiers must reject it against tests/fixtures/upstream-tiers.tsv
-// (exact tier match for every agent except sebastian, exempt by name — r5).
-// Otherwise a full valid 22-agent map (copy of the canonical map).
+// Negative fixture for apply_models.py --validate-map --check-tiers (Phase 6;
+// re-based and decontaminated in P10B). 'dick' is upstream sonnet (role
+// 'reviewers'); this map silently retiers dick up to 'deep-reviewers' (opus
+// tier) — an undisclosed upgrade. --check-tiers must reject it against
+// tests/fixtures/upstream-tiers.tsv (exact tier match for every agent except
+// sebastian, exempt by name — r5). Otherwise a full, structurally-valid
+// 22-agent map: dick's old role 'reviewers' still has eight other agents and
+// 'deep-reviewers' gains dick, so no role is orphaned and no file is uncovered
+// — the ONLY failure is the tier upgrade.
+//
+// Decontamination note (P10B): the pre-P10B form moved 'codebase-locator'
+// fast-scan -> builders, which structurally orphaned 'fast-scan' (codebase-
+// locator is the sole haiku-upstream agent, so it must stay on fast-scan or
+// something else must fill it — and any other agent there is itself a
+// downgrade). That produced a SECOND, contaminating orphan-role FAIL once P7
+// folded orphan detection into the shared validator — a reject-for-the-wrong-
+// reason defect (P8). Retiering a multi-agent-role member instead yields
+// exactly one FAIL.
 {
   "roles": {
     "conductor": {
@@ -17,29 +29,29 @@
       "fallback": "claude-sonnet-5"
     },
     "builders": {
-      "model": "claude-sonnet-4.5",
+      "model": "claude-sonnet-5",
       "family": "anthropic",
-      "fallback": "claude-sonnet-4.1"
+      "fallback": "claude-opus-4.8"
     },
     "reviewers": {
-      "model": "claude-sonnet-4.5",
+      "model": "claude-sonnet-5",
       "family": "anthropic",
-      "fallback": "claude-sonnet-4.1"
+      "fallback": "claude-opus-4.8"
     },
     "support": {
-      "model": "claude-sonnet-4.5",
+      "model": "claude-sonnet-5",
       "family": "anthropic",
-      "fallback": "claude-sonnet-4.1"
+      "fallback": "claude-opus-4.8"
     },
     "fast-scan": {
       "model": "claude-haiku-4.5",
       "family": "anthropic",
-      "fallback": "claude-haiku-4.1"
+      "fallback": "claude-sonnet-5"
     },
     "validation": {
-      "model": "gpt-5.4",
+      "model": "gpt-5.6-sol",
       "family": "openai",
-      "fallback": "gpt-5.1"
+      "fallback": "gpt-5.6-terra"
     }
   },
   "agents": {
@@ -58,12 +70,12 @@
     "tessa": "reviewers",
     "percy": "reviewers",
     "librarian": "reviewers",
-    "dick": "reviewers",
+    "dick": "deep-reviewers",
     "sarah": "reviewers",
     "codebase-analyzer": "support",
     "codebase-pattern-finder": "support",
     "web-search-researcher": "support",
-    "codebase-locator": "builders",
+    "codebase-locator": "fast-scan",
     "sebastian": "validation"
   }
 }

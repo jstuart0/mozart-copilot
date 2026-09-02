@@ -398,20 +398,20 @@ would silently re-tier someone:
 
 | role | claude-bulk (shipped active map) | gpt-bulk |
 |---|---|---|
-| `conductor` | Claude Opus 5 | GPT-5.4 |
-| `deep-reviewers` | Claude Opus 5 | GPT-5.4 |
-| `builders` | Claude Sonnet 4.5 | GPT-5.3-Codex |
-| `reviewers` | Claude Sonnet 4.5 | GPT-5.3-Codex |
-| `support` | Claude Sonnet 4.5 | GPT-5.3-Codex |
-| `fast-scan` | Claude Haiku 4.5 | GPT-5.4-mini |
-| `validation` | **GPT-5.4** | **Claude Opus 5** |
+| `conductor` | Claude Opus 5 | GPT-5.6-Sol |
+| `deep-reviewers` | Claude Opus 5 | GPT-5.6-Sol |
+| `builders` | Claude Sonnet 5 | GPT-5.3-Codex |
+| `reviewers` | Claude Sonnet 5 | GPT-5.3-Codex |
+| `support` | Claude Sonnet 5 | GPT-5.3-Codex |
+| `fast-scan` | Claude Haiku 4.5 | GPT-5.6-Luna |
+| `validation` | **GPT-5.6-Sol** | **Claude Opus 5** |
 
 Flip the entire roster's family with one command, and `validation` flips
 with it, in the opposite direction, automatically — that's the whole point
 of shipping the switch as two presets rather than one hand-edited map:
 
 ```sh
-python3 scripts/apply_models.py --preset claude-bulk --apply   # 21 builders/reviewers on Anthropic, sebastian on GPT-5.4
+python3 scripts/apply_models.py --preset claude-bulk --apply   # 21 builders/reviewers on Anthropic, sebastian on GPT-5.6-Sol
 python3 scripts/apply_models.py --preset gpt-bulk --apply      # 21 builders/reviewers on OpenAI,    sebastian on Claude Opus 5
 ```
 
@@ -439,22 +439,27 @@ tracked without gating on it.
 model names, not literal API identifiers — those are user-edited and
 conservative-double-sourced by design (Context, "What we're assuming"). This
 port derives a scalar `model:` string mechanically from the display name:
-lowercase, spaces to hyphens, dot preserved (`Claude Sonnet 4.5` →
-`claude-sonnet-4.5`, `GPT-5.4` → `gpt-5.4`, `GPT-5.3-Codex` →
-`gpt-5.3-codex`). `apply_models.py` validates every role's `model` as shape
-only (a non-empty scalar string) — never membership in a hard-coded ID list
-— so this convention is a stamping default, not a validated constraint; edit
+lowercase, spaces to hyphens, dot preserved (`Claude Sonnet 5` →
+`claude-sonnet-5`, `GPT-5.6-Sol` → `gpt-5.6-sol`, `GPT-5.3-Codex` →
+`gpt-5.3-codex`). `apply_models.py` validates every role's `model` as a
+non-empty scalar string **and**, since P10B (R1), as a member of the live
+`KNOWN_MODELS` registry in `scripts/check_agents.py` — a role assigned a model
+the harness no longer offers is now rejected rather than silently shipped, and
+each role's declared `family` must match that model's real provider (this is
+what makes D8's cross-family invariant enforced, not advisory). The registry is
+a static, hand-maintained forward-maintenance item; edit
 `.github/mozart/config/model-map.jsonc` directly, or a preset in
-`config/model-maps/`, for your org's actual model policy.
+`config/model-maps/`, for your org's actual model policy, and add any new model
+ID to `KNOWN_MODELS` when you do.
 
 Every role also carries a same-family `fallback`, surfaced by
 `apply_models.py --explain` and never itself stamped into a persona's
 `model:` — for when the primary is org-disabled or deprecated (a real risk:
 global model policy went GA 2026-08-26).
 
-- `jackson` — role `builders` → `claude-sonnet-4.5`
+- `jackson` — role `builders` → `claude-sonnet-5`
 - `bob` — role `deep-reviewers` → `claude-opus-5` (upstream opus, exact match)
-- `sebastian` — role `validation` → `gpt-5.4` (the non-builder family, D8)
+- `sebastian` — role `validation` → `gpt-5.6-sol` (the non-builder family, D8)
 
 ## Model attestation
 

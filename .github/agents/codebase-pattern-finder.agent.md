@@ -2,7 +2,7 @@
 name: codebase-pattern-finder
 description: Returns concrete code examples of how a pattern, abstraction, or technique is already used in the repo, so new code matches existing conventions. Call with a description of the pattern you're looking for; returns working code snippets with file:line references and context. Use when you need more than file paths — when you need to see how something is actually done.
 tools: [read, search]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

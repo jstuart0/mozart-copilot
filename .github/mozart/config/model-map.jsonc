@@ -4,7 +4,7 @@
 // every agent's `model:` frontmatter to match.
 //
 // All Anthropic except validation, which is always the non-builder family
-// (D8): sebastian runs GPT-5.4 under this preset so the counterpoint review
+// (D8): sebastian runs gpt-5.6-sol under this preset so the counterpoint review
 // is a genuine cross-model read, not a same-family echo.
 {
   "roles": {
@@ -19,29 +19,29 @@
       "fallback": "claude-sonnet-5"
     },
     "builders": {
-      "model": "claude-sonnet-4.5",
+      "model": "claude-sonnet-5",
       "family": "anthropic",
-      "fallback": "claude-sonnet-4.1"
+      "fallback": "claude-opus-4.8"
     },
     "reviewers": {
-      "model": "claude-sonnet-4.5",
+      "model": "claude-sonnet-5",
       "family": "anthropic",
-      "fallback": "claude-sonnet-4.1"
+      "fallback": "claude-opus-4.8"
     },
     "support": {
-      "model": "claude-sonnet-4.5",
+      "model": "claude-sonnet-5",
       "family": "anthropic",
-      "fallback": "claude-sonnet-4.1"
+      "fallback": "claude-opus-4.8"
     },
     "fast-scan": {
       "model": "claude-haiku-4.5",
       "family": "anthropic",
-      "fallback": "claude-haiku-4.1"
+      "fallback": "claude-sonnet-5"
     },
     "validation": {
-      "model": "gpt-5.4",
+      "model": "gpt-5.6-sol",
       "family": "openai",
-      "fallback": "gpt-5.1"
+      "fallback": "gpt-5.6-terra"
     }
   },
   "agents": {

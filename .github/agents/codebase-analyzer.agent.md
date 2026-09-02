@@ -2,7 +2,7 @@
 name: codebase-analyzer
 description: Analyzes codebase implementation details. Call the codebase-analyzer agent when you need to find detailed information about specific components. As always, the more detailed your request prompt, the better! :)
 tools: [read, search]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

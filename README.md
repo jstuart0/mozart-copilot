@@ -220,7 +220,7 @@ Two shipped presets flip the whole roster's family in one move while
 preserving that invariant:
 
 ```sh
-python3 scripts/apply_models.py --preset claude-bulk --apply   # builders on Anthropic, sebastian on GPT-5.4
+python3 scripts/apply_models.py --preset claude-bulk --apply   # builders on Anthropic, sebastian on GPT-5.6-Sol
 python3 scripts/apply_models.py --preset gpt-bulk --apply      # builders on OpenAI,    sebastian on Claude Opus 5
 ```
 

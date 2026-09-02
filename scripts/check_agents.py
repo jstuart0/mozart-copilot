@@ -930,6 +930,93 @@ def check_mozart_allowlist(agents_dir: Path = None) -> list:
     return errors
 
 
+# FORWARD-MAINTENANCE ITEM (R1). A static registry, deliberately not a live
+# provider-API probe: an API call would add a network dependency and a
+# credential to a CI job that has neither, to defend against a roster that
+# changes a few times a year.
+#
+# Consequence, accepted: a NEWLY ADDED model is rejected here until someone
+# edits this mapping. That is the cheap failure. The expensive failure — a
+# REMOVED model shipping to consumers as an undispatchable roster — is what
+# this exists to catch, and a stale registry still catches it. (Verified live
+# in this campaign's own stage 4: xander, dexter and tessa hard-failed to
+# launch against a since-removed ID and needed manual overrides.)
+#
+# The family column is not decoration: it is what binds a model ID to its
+# real provider, so roles.<r>.family stops being an unverified author-supplied
+# label and D8's cross-family invariant becomes enforced rather than advisory.
+#
+# Source of truth: the model roster the harness advertises to `mozart` in its
+# subagent-dispatch tool documentation. Re-read it when bumping this mapping,
+# and bump `.github/mozart/VERSION` when you do.
+KNOWN_MODELS = {  # {model_id: family}
+    "claude-sonnet-5": "anthropic",
+    "claude-fable-5": "anthropic",
+    "claude-opus-5": "anthropic",
+    "claude-opus-4.8": "anthropic",
+    "claude-haiku-4.5": "anthropic",
+    "gpt-5.6-sol": "openai",
+    "gpt-5.6-terra": "openai",
+    "gpt-5.6-luna": "openai",
+    "gpt-5.3-codex": "openai",
+    "mai-code-1.1-flash": "microsoft",
+    "gemini-3.7-flash": "google",
+}
+
+
+def check_model_ids(m: dict) -> list:
+    """Live-model-ID allowlist gate (R1). Returns a list of failure strings
+    (empty == pass); order-stable (role-declaration order); NEVER raises.
+
+    Deliberately SEPARATE from validate_map_structure() (D-B.2's lesson: folding
+    a second invariant into a shared validator is how CI became unfixable). It
+    is safe to call from apply_models.py's preset loop where stamp drift was not,
+    because model-ID validity is ABSOLUTE, not preset-relative — every preset can
+    satisfy KNOWN_MODELS simultaneously, whereas a stamp matches at most one.
+
+    Two invariants, both over the parsed map only (in-process, pure compute):
+      1. every role's `model` and every present `fallback` is in KNOWN_MODELS;
+      2. every role's declared `family` matches KNOWN_MODELS[model] — this is
+         what turns D8 from a trusted free-text label into an enforced one
+         (xander L3). `fallback` family is deliberately NOT constrained: a
+         cross-family fallback is a legitimate degradation path when a provider
+         is down, not a violation of the independent-read guarantee D8 governs.
+
+    Not this function's concern (reporting it here would be the H4 double-report):
+    a role with no `model` key at all — that is validate_map_structure()'s
+    failure. A MISSING `fallback` is legal and silent; a PRESENT but dead one is
+    a failure. Every message names the offending value, not just the role, so an
+    operator can act without opening the file."""
+    errors = []
+    roles = m.get("roles")
+    if not isinstance(roles, dict):
+        return errors
+    for role_name, role_def in roles.items():
+        if not isinstance(role_def, dict):
+            continue
+        model = role_def.get("model")
+        if isinstance(model, str) and model.strip():
+            if model not in KNOWN_MODELS:
+                errors.append(
+                    f"role '{role_name}' model '{model}' is not a known dispatchable model ID "
+                    f"(not in KNOWN_MODELS — see the forward-maintenance note in check_agents.py)"
+                )
+            else:
+                declared = role_def.get("family")
+                if isinstance(declared, str) and declared.strip() and declared != KNOWN_MODELS[model]:
+                    errors.append(
+                        f"role '{role_name}' declares family '{declared}' but model '{model}' is "
+                        f"provided by '{KNOWN_MODELS[model]}' (D8 family binding)"
+                    )
+        fallback = role_def.get("fallback")
+        if isinstance(fallback, str) and fallback.strip() and fallback not in KNOWN_MODELS:
+            errors.append(
+                f"role '{role_name}' fallback '{fallback}' is not a known dispatchable model ID "
+                f"(not in KNOWN_MODELS)"
+            )
+    return errors
+
+
 def cmd_map(path_str: str, min_agents=None, agents_dir: Path = None) -> int:
     p = Path(path_str)
     if not p.is_absolute():
@@ -946,9 +1033,15 @@ def cmd_map(path_str: str, min_agents=None, agents_dir: Path = None) -> int:
 
     errors = validate_map_structure(m, agents_dir, min_agents)
     errors += check_mozart_allowlist(agents_dir)
+    # check_model_ids is kept SEPARATE from validate_map_structure (D-B.2) but is
+    # safe to run here AND over apply_models.py's preset loop because model-ID
+    # validity is absolute, not preset-relative — unlike the stamp drift that was
+    # deleted from this function, every preset can satisfy KNOWN_MODELS at once.
+    errors += check_model_ids(m)
     for e in errors:
         print(f"FAIL: {e}")
     return 1 if errors else 0
+
 
 
 # --------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 name: web-search-researcher
 description: Performs targeted web research to answer specific factual questions about libraries, APIs, frameworks, or external systems, returning sources alongside conclusions. Call when you need current information that is not in the codebase — documentation, best practices, version differences, external system behavior. Returns a structured findings report with direct citations.
 tools: [read, search, web, todos]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

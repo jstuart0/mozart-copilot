@@ -194,6 +194,148 @@ non-default Copilot home), the CLI wrapper enforces a symlink at
 with the same remedy if the link is missing or stale. VS Code has no
 equivalent pre-launch hook; the same symlink is the fix there too.
 
+## Operating: upgrade, uninstall, troubleshoot
+
+These three procedures cover the behavior changes the installer and the CLI
+wrapper introduced. All paths below use `<copilot-home>` for your resolved
+Copilot home (default `~/.copilot`).
+
+### Upgrade
+
+Re-running the installer no longer silently overwrites files. It **refuses**
+(exit non-zero) when a destination file already exists and is not byte-identical
+to what it would install — a hand-edited persona in the shared
+`<copilot-home>/agents/` namespace, or a `mozart` wrapper already on your `PATH`.
+A byte-identical file is a silent no-op, so a re-run that changes nothing is
+always safe.
+
+To take a deliberate upgrade that *does* change installed files, add
+`--force-clobber`:
+
+```sh
+scripts/install-bundle.sh --user-scope --apply --force --force-clobber
+```
+
+`--force-clobber` overrides the byte-identity guard on the shared
+`<copilot-home>/agents/` namespace. Use it on a deliberate upgrade; do not add it
+to routine commands. (`--force` alone only permits moving an installed bundle
+*backwards* to an older `VERSION`; it does not authorize clobbering a modified
+file — that is `--force-clobber`'s separate consent question.)
+
+### Uninstall
+
+The installer records every file it writes in an ownership manifest at
+`<copilot-home>/mozart-manifest.txt` (mode `0600`), one line per file in the
+format `<sha256>  <absolute-path>` (two spaces, checksum first). The uninstall
+procedure reads that manifest and removes **only** the files it lists, and only
+if each is still byte-for-byte the file the installer wrote. It is deliberately
+conservative:
+
+- It reads with `IFS= read -r` so paths are never word-split or glob-expanded.
+- It deletes **only** files under `<copilot-home>/agents/` or a file whose
+  basename is exactly `mozart` (the wrapper). Anything else in the manifest is
+  skipped with a warning — never a wildcard, never `rm -rf`.
+- It **refuses to delete any file whose current sha256 differs from the recorded
+  one** — that file was modified since install and is no longer ours to remove.
+- If the manifest is missing, unreadable, or a line is malformed, it deletes
+  nothing.
+- It never removes the shared `<copilot-home>/agents/` directory itself, which
+  may hold third-party personas.
+
+Run it exactly as written (it makes no changes you did not install):
+
+```sh
+COPILOT_HOME="${COPILOT_HOME:-$HOME/.copilot}"
+manifest="$COPILOT_HOME/mozart-manifest.txt"
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  else
+    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+if [ ! -r "$manifest" ]; then
+  echo "no readable ownership manifest at $manifest — nothing to uninstall" >&2
+else
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    recorded_sha="${line%%  *}"
+    path="${line#*  }"
+
+    # Skip malformed lines (sha256 is exactly 64 lowercase hex chars) — a
+    # tampered or truncated manifest must delete nothing it cannot verify.
+    case "$recorded_sha" in *[!0-9a-f]* | "") echo "skip (malformed line): $line" >&2; continue;; esac
+    [ "${#recorded_sha}" -eq 64 ] || { echo "skip (malformed line): $line" >&2; continue; }
+
+    # Namespace constraint: only files under <copilot-home>/agents/, or the
+    # 'mozart' wrapper basename. Anything else is not ours to delete.
+    case "$path" in
+      "$COPILOT_HOME"/agents/*) ;;
+      */mozart) ;;
+      *) echo "skip (outside owned namespace): $path" >&2; continue;;
+    esac
+
+    [ -e "$path" ] || continue
+
+    # Checksum gate: refuse anything modified since install.
+    if [ "$(sha256_of "$path")" != "$recorded_sha" ]; then
+      echo "REFUSED (modified since install, not ours to delete): $path" >&2
+      continue
+    fi
+
+    rm -f "$path" && echo "removed: $path"
+  done < "$manifest"
+fi
+```
+
+After the personas and wrapper are gone you may remove the bundle and manifest
+yourself: `rm -rf "$COPILOT_HOME/mozart" "$COPILOT_HOME/mozart-manifest.txt"
+"$COPILOT_HOME/mozart-trust"`. If you added the VS Code settings, remove
+`chat.agentFilesLocations` and `chat.additionalReadAccessFolders` too.
+
+### Troubleshoot
+
+**`mozart: REFUSED — bundle provenance mismatch.`** The CLI wrapper compares the
+`.github/mozart` bundle the repo you launched from ships against the one you
+installed, and it refused because they differ and the repo root is not a trusted
+root. This proves the tree is **not the one you installed from** — it does *not*
+prove the tree is malicious, and it does *not* prove it is genuine. The gate is
+**consent + baseline comparison, not authenticity**: it performs no signature or
+checksum verification of bundle contents (see `SECURITY.md`).
+
+Two legitimate remedies, in order of preference:
+
+1. **Trust the repo permanently by reinstalling from it** — this records its
+   canonical root in your trust list so future launches are silent:
+
+   ```sh
+   scripts/install-bundle.sh --user-scope --apply   # run from the repo root
+   ```
+
+2. **Trust it for this one invocation** (root-scoped, never a global boolean;
+   do **not** auto-load it via direnv/`.envrc` — that self-trusts a repo-local
+   bundle and defeats the gate, and `SECURITY.md` lists it as an anti-pattern):
+
+   ```sh
+   MOZART_TRUST_REPO_BUNDLE="<repo-root>" mozart "<task>"
+   ```
+
+   where `<repo-root>` is the exact path the banner printed as `repo root`.
+
+**A `--target`-only consumer with no user-scope install must use the override.**
+Trust roots are recorded in the *user-side* home (`<copilot-home>/mozart-trust/
+roots`). If you pinned a bundle into a repo with `--target` but never ran a
+`--user-scope` install, there is no user-side home to record the root into, so
+every launch from that repo hits the gate — the per-invocation
+`MOZART_TRUST_REPO_BUNDLE` override is the intended path there. The `--target`
+installer prints this notice when it detects no `<copilot-home>`.
+
+The gate guards the wrapper's `exec` only: it is bypassed by a bare `copilot`
+launch, by VS Code (which never runs the wrapper), and by any already-running
+agent.
+
 ## Configuring your repo
 
 Mozart adapts to your **ticketing**, **documentation**, **code-retrieval**,

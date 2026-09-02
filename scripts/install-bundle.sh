@@ -4,7 +4,7 @@
 # (D1/D9/D10/D11).
 #
 # Usage:
-#   install-bundle.sh --target <dir> [--apply] [--force]
+#   install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
 #   install-bundle.sh --user-scope [--home <dir>] [--copilot-home <dir>]
 #                      [--bin-dir <dir>] [--no-bundle] [--no-wrapper]
 #                      [--apply] [--force] [--force-clobber]
@@ -75,9 +75,10 @@
 #                      only question --force answers: "may this bundle move
 #                      backwards?"
 #
-# --force-clobber      Only valid with --user-scope. Required to overwrite a
-#                      pre-existing file this installer did not write and
-#                      that is not byte-identical to what would be installed
+# --force-clobber      Valid with --target or --user-scope. Required to
+#                      overwrite a pre-existing file this installer did not
+#                      write and that is not byte-identical to what would be
+#                      installed
 #                      — the CLI wrapper binary or an agent definition file
 #                      (D11). Ownership is proven by byte-identity alone: an
 #                      identical file makes the write a no-op, so nothing can
@@ -150,7 +151,7 @@ is_absurd_root() {
 
 usage() {
   cat >&2 <<'USAGE'
-usage: install-bundle.sh --target <dir> [--apply] [--force]
+usage: install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
        install-bundle.sh --user-scope [--home <dir>] [--copilot-home <dir>]
                           [--bin-dir <dir>] [--no-bundle] [--no-wrapper]
                           [--apply] [--force] [--force-clobber]
@@ -265,8 +266,12 @@ if [ "$NO_WRAPPER" -eq 1 ] && [ "$USER_SCOPE" -eq 0 ]; then
   usage
   exit 2
 fi
-if [ "$FORCE_CLOBBER" -eq 1 ] && [ "$USER_SCOPE" -eq 0 ]; then
-  echo "usage error: --force-clobber is only valid with --user-scope" >&2
+if [ "$FORCE_CLOBBER" -eq 1 ] && [ -z "$TARGET" ] && [ "$USER_SCOPE" -eq 0 ]; then
+  # --force-clobber is valid with either scope (P12 widened it to --target so
+  # the documented reinstall command survives P13/P14's collision detection).
+  # It is meaningless with no scope at all; the required-scope guard below
+  # gives the clearer message, so only guard the truly-nonsensical case here.
+  echo "usage error: --force-clobber requires --target or --user-scope" >&2
   usage
   exit 2
 fi

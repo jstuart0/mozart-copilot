@@ -54,7 +54,7 @@ Two correct ways to change models, in order of preference:
    `mozart-copilot` source repo, hand-edit
    `.github/mozart/config/model-map.jsonc` (or run `apply_models.py --preset <name> --apply`),
    run `apply_models.py --apply` to stamp every agent's frontmatter to
-   match, then reinstall: `scripts/install-bundle.sh --target <this-repo> --apply --force`.
+   match, then reinstall: `scripts/install-bundle.sh --target <this-repo> --apply --force --force-clobber`. `--force-clobber` overrides the byte-identity guard on the shared `<copilot-home>/agents/` namespace. Use it on a deliberate upgrade; do not add it to routine commands.
    This is the only path `--check`, `--check-families`, and `--check-tiers`
    actually validate before anything ships — map and frontmatter can't drift
    apart.
@@ -71,9 +71,9 @@ Two correct ways to change models, in order of preference:
    `.github/mozart/config/model-map.jsonc` (or run
    `apply_models.py --preset <name> --apply`) in the `mozart-copilot` source
    repo, then `apply_models.py --apply` to stamp every agent's frontmatter to
-   match — but reinstall with
-   `scripts/install-bundle.sh --user-scope --apply --force` instead of
-   `--target`. The install re-copies an already-validated pair — the bundle
+   match — but reinstall with `--user-scope` instead of `--target`:
+   `scripts/install-bundle.sh --user-scope --apply --force --force-clobber`. `--force-clobber` overrides the byte-identity guard on the shared `<copilot-home>/agents/` namespace. Use it on a deliberate upgrade; do not add it to routine commands.
+   The install re-copies an already-validated pair — the bundle
    is written before the agent definitions, so an install interrupted
    partway leaves the old agents pointing at the new, complete bundle
    rather than the reverse (not a transaction — see `install-bundle.sh`'s

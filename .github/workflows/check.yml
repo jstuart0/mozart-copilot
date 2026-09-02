@@ -345,7 +345,12 @@ jobs:
           PATH="$STUB:$PATH" COPILOT_HOME="$CH" bash scripts/uninstall.sh > out.txt 2>&1 && rc=0 || rc=$?
           if [ "$rc" -ne 0 ]; then echo "a failing hash utility aborted the uninstall (expected exit 0), got $rc" >&2; cat out.txt; exit 1; fi
           grep -qF 'modified since install' out.txt || { echo "missing the documented skip message" >&2; cat out.txt; exit 1; }
-          removed=$(grep -c '^removed:' out.txt)
+          # Expected result is ZERO removals; `grep -c` prints 0 but EXITS 1 on
+          # no match, which would kill this step under `bash -e` before the
+          # assertion runs. `|| true` here guards a count capture whose zero
+          # value IS the expected result — not a suppressed verification (the
+          # `-ne 0` assertion below still fires); do not read it as W7b suppression.
+          removed=$(grep -c '^removed:' out.txt || true)
           if [ "$removed" -ne 0 ]; then echo "a hash failure still deleted $removed file(s)" >&2; cat out.txt; exit 1; fi
           after=$(ls "$CH/agents" | wc -l | tr -d ' ')
           if [ "$after" -ne "$before" ]; then echo "agents count changed under a failing hash ($before -> $after)" >&2; exit 1; fi

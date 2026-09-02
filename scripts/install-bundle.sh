@@ -170,6 +170,15 @@ is_absurd_root() {
 # -f / realpath, whose flags differ across the two). A symlink — including a
 # dangling one — is refused; nothing is followed, so an inconclusive resolve
 # can never be mistaken for "not a link".
+#
+# ACCEPTED RESIDUAL (xander P13-P16 gate, Low — deliberate, NOT fixed): a
+# symlinked *ancestor* ABOVE the operator-supplied root is not resolved here.
+# Catching it would require an unconditional `readlink -f`/`realpath` on every
+# ancestor, whose flags diverge across BSD and GNU — the exact portability trap
+# this whole script avoids. The [ -L ] container and leaf checks cover every
+# path this installer itself creates or writes; an attacker who already controls
+# a parent directory of the operator's chosen root has broader access than this
+# gate could meaningfully arbitrate. Documented as a choice, not an oversight.
 refuse_if_symlinked_containers() {
   local blocks=()
   local label path
@@ -236,13 +245,29 @@ write_manifest() {
   local manifest="$1"; shift
   local nl=$'\n'
   local p
-  # 1. Newline rejection — fail closed before any read or write.
+  # 1. Control-character rejection — fail closed before any read or write. The
+  #    format is line-based; a control char in a path forges it and becomes an
+  #    arbitrary-delete primitive at uninstall. Newline and CR are checked
+  #    explicitly (a command substitution would swallow a trailing newline),
+  #    and any other control char via a control-class scan (xander LOW: the
+  #    original check caught \n only, not \r or other controls).
   for p in "$@"; do
-    if [ "$p" != "${p//$nl/}" ]; then
-      echo "REFUSED: refusing to record a destination path containing a newline in the ownership manifest — it would forge the line-based format and become an arbitrary-delete primitive at uninstall: $p" >&2
+    if [ "$p" != "${p//$nl/}" ] || [ "$p" != "${p//$'\r'/}" ] || \
+       [ -n "$(printf '%s' "$p" | LC_ALL=C tr -cd '[:cntrl:]')" ]; then
+      echo "REFUSED: refusing to record a destination path containing a control character (newline, carriage return, tab, ...) in the ownership manifest — it would forge the line-based format and become an arbitrary-delete primitive at uninstall: $p" >&2
       exit 2
     fi
   done
+  # 1b. Leaf symlink refusal (xander HIGH). P13 guards the *container*
+  #     <copilot-home>; nothing guarded this leaf. An attacker who pre-creates
+  #     the manifest as a symlink would get arbitrary-file truncate/append as
+  #     the installing user AND could poison the very manifest a later
+  #     uninstall (P20) treats as authoritative. Refuse before writing; the
+  #     temp-file + mv -f below makes the placement itself never follow a link.
+  if [ -L "$manifest" ]; then
+    echo "REFUSED: ownership manifest path $manifest is a symlink; refusing to write through it — this would truncate/append to the link's target and forge the uninstall's delete authority. Remove it and re-run." >&2
+    exit 1
+  fi
   # 2. An existing-but-unreadable manifest cannot be safely unioned; rewriting
   #    it would orphan every prior entry. Fail closed rather than shrink it.
   if [ -f "$manifest" ] && [ ! -r "$manifest" ]; then
@@ -270,13 +295,20 @@ write_manifest() {
     fi
     merged+="$sum  $p$nl"
   done
-  # 5. Write 0600. umask keeps the content from existing world-readable even
-  #    momentarily; chmod re-asserts the mode on an already-present file.
+  # 5. Write 0600 atomically via a temp file in the same dir + mv -f (xander
+  #    MEDIUM/LOW): `>` truncates in place — through a symlinked leaf if one
+  #    were swapped in after the check above (TOCTOU), and a crash mid-write
+  #    would leave a partial manifest a later uninstall would trust. Writing a
+  #    sibling temp then renaming makes both windows irrelevant: mv -f replaces
+  #    the destination name and never follows a symlink at it. umask keeps the
+  #    content from existing world-readable even momentarily.
+  local tmp="$manifest.tmp.$$"
   local umask_old; umask_old="$(umask)"
   umask 077
-  printf '%s' "$merged" > "$manifest"
+  printf '%s' "$merged" > "$tmp"
   umask "$umask_old"
-  chmod 0600 "$manifest"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$manifest"
 }
 
 # --------------------------------------------------------------------------
@@ -324,19 +356,46 @@ record_trust_root() {
     return 0
   fi
   local trustdir="$chome/mozart-trust" rootsfile="$chome/mozart-trust/roots"
-  local id; id="$(dev_ino "$canon")"
+  # Leaf/container symlink refusal (xander HIGH). P13 guards <copilot-home>;
+  # nothing guarded these leaves. An attacker who pre-creates mozart-trust (the
+  # dir) or mozart-trust/roots (the file) as a symlink could poison the very
+  # roots list P17's provenance gate trusts — self-trusting a hostile bundle.
+  # Refuse before writing; the temp-file + mv -f below makes the placement
+  # itself never follow a link even under a check/write race.
+  if [ -L "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir is a symlink; refusing to write through it — this would poison the trust roots the launch gate relies on. Remove it and re-run." >&2
+    exit 1
+  fi
   mkdir -p "$trustdir"
   chmod 0700 "$trustdir"
+  if [ -L "$rootsfile" ]; then
+    echo "REFUSED: trust roots file $rootsfile is a symlink; refusing to write through it — this would poison the trust roots the launch gate relies on. Remove it and re-run." >&2
+    exit 1
+  fi
+  local id; id="$(dev_ino "$canon")"
+  # Build the merged roots content up front, then write atomically via a temp
+  # file + mv -f (xander MEDIUM/LOW): appending with `>>` writes in place —
+  # through a swapped-in symlinked leaf, and a crash mid-append leaves a partial
+  # roots file. A sibling temp + rename closes both windows.
+  local merged="" existing
   if [ -f "$rootsfile" ]; then
-    local existing
     while IFS= read -r existing || [ -n "$existing" ]; do
       [ -z "$existing" ] && continue
+      # Already recorded (by exact canonical string, or by dev_ino identity for
+      # symlink/case aliases): no-op, re-assert the mode and return.
       if [ "$existing" = "$canon" ]; then chmod 0600 "$rootsfile"; return 0; fi
       if [ -n "$id" ] && [ "$(dev_ino "$existing")" = "$id" ]; then chmod 0600 "$rootsfile"; return 0; fi
+      merged+="$existing"$'\n'
     done < "$rootsfile"
   fi
-  printf '%s\n' "$canon" >> "$rootsfile"
-  chmod 0600 "$rootsfile"
+  merged+="$canon"$'\n'
+  local tmp="$rootsfile.tmp.$$"
+  local umask_old; umask_old="$(umask)"
+  umask 077
+  printf '%s' "$merged" > "$tmp"
+  umask "$umask_old"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$rootsfile"
 }
 
 usage() {
@@ -477,6 +536,15 @@ fi
 # --------------------------------------------------------------------------
 
 if [ -n "$TARGET" ]; then
+  # xander MEDIUM: mirror the --user-scope is_absurd_root guard. --target also
+  # drives an `rm -rf "$TARGET/.github/mozart"` below, so a target resolving to
+  # a system or home root is the same disproportionate blast radius --user-scope
+  # already refuses. `--target / --apply` used to pass; it now refuses (exit 2).
+  if is_absurd_root "$TARGET"; then
+    echo "usage error: refusing to install into '$TARGET' — this looks like a system or home root, not a repo (this branch drives an rm -rf of <target>/.github/mozart)." >&2
+    exit 2
+  fi
+
   SOURCE_VERSION="$(cat "$SOURCE_VERSION_FILE" 2>/dev/null || echo "unknown")"
   DEST_VERSION_FILE="$TARGET/.github/mozart/VERSION"
 
@@ -536,7 +604,20 @@ if [ -n "$TARGET" ]; then
   fi
 
   mkdir -p "$TARGET/.github/agents"
-  cp "$REPO_ROOT"/.github/agents/*.agent.md "$TARGET/.github/agents/"
+  # xander MEDIUM (TOCTOU): the collision matrix above is a separate pass from
+  # this write. Re-assert the leaf is not a symlink immediately before writing,
+  # and write to a sibling temp then mv -f into place — so an attacker swapping
+  # a destination for a symlink between the check and here has no effect (cp
+  # never follows a link, mv -f replaces the name).
+  for f in "$REPO_ROOT"/.github/agents/*.agent.md; do
+    d="$TARGET/.github/agents/$(basename "$f")"
+    if [ -L "$d" ]; then
+      echo "REFUSED: $d became a symlink after the collision check; refusing to write through it." >&2
+      exit 1
+    fi
+    cp "$f" "$d.tmp.$$"
+    mv -f "$d.tmp.$$" "$d"
+  done
 
   # P13/Y19b — this cp -R is a *merge* into an existing tree, so a nested
   # pre-existing symlink inside the destination bundle (e.g. .github/mozart/
@@ -759,7 +840,17 @@ if [ "$NO_WRAPPER" -eq 0 ]; then
   mkdir -p "$BIN_DIR"
 fi
 for i in "${!DEST_PATHS[@]}"; do
-  cp "${SRC_PATHS[$i]}" "${DEST_PATHS[$i]}"
+  d="${DEST_PATHS[$i]}"
+  # xander MEDIUM (TOCTOU): re-assert the leaf is not a symlink immediately
+  # before writing, and write via a sibling temp + mv -f, so a destination
+  # swapped for a symlink between the collision matrix above and this write is
+  # irrelevant — cp never follows a link, mv -f replaces the name atomically.
+  if [ -L "$d" ]; then
+    echo "REFUSED: $d became a symlink after the collision check; refusing to write through it." >&2
+    exit 1
+  fi
+  cp "${SRC_PATHS[$i]}" "$d.tmp.$$"
+  mv -f "$d.tmp.$$" "$d"
 done
 if [ "$NO_WRAPPER" -eq 0 ]; then
   chmod 0755 "$BIN_DIR/mozart"

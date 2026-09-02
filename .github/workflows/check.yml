@@ -131,6 +131,26 @@ jobs:
             exit 1
           fi
 
+      - name: Install-check — a pre-existing state-file symlink leaf is refused (G-fixes, xander HIGH)
+        # P13 guards the container <copilot-home>; nothing guarded the state-file
+        # LEAVES. An attacker who pre-creates <copilot-home>/mozart-manifest.txt
+        # (or mozart-trust / mozart-trust/roots) as a symlink gets arbitrary-file
+        # truncate/append as the installing user AND can poison the very manifest
+        # /roots a later uninstall (P20) and the P17 launch gate trust. The
+        # installer must refuse with a symlink-specific message, and the link's
+        # target must never be created. W7b idiom: assert the exact refusal, not
+        # a bare nonzero exit (three distinct conditions here can exit nonzero).
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"; C="$(mktemp -d)"
+          mkdir -p "$H/.copilot"
+          ln -s "$C/pwned" "$H/.copilot/mozart-manifest.txt"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply --force > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing the symlinked manifest leaf, got $rc" >&2; cat out.txt; exit 1; fi
+          if ! grep -qF 'ownership manifest path' out.txt || ! grep -qF 'is a symlink' out.txt; then
+            echo "missing the manifest-leaf symlink-refusal message" >&2; cat out.txt; exit 1
+          fi
+          if [ -e "$C/pwned" ]; then echo "the symlink target was written through — refusal did not hold" >&2; exit 1; fi
+
       - name: Model map covers the roster and the allowlist (Phase 6 — step 30)
         run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 22
 

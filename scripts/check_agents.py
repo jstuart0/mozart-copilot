@@ -42,6 +42,23 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Best-effort PyYAML cross-check (live-parser incident, 2026-09-01): real
+# copilot CLI 1.0.82 rejected an installed mozart.agent.md — "failed to
+# parse YAML frontmatter: mapping values are not allowed in this context"
+# — for an unquoted description scalar containing ': ' that this repo's
+# hand-rolled parser (parse_frontmatter below, which only ever looks at the
+# first ':' on a line) silently accepted. When PyYAML is importable, every
+# frontmatter block is additionally parsed with yaml.safe_load as a second,
+# spec-accurate opinion; when it isn't, that cross-check is silently
+# skipped and every caller that reports results names which mode ran, so a
+# pass is attributable to one or both parsers rather than assumed.
+try:
+    import yaml as _pyyaml
+    HAVE_PYYAML = True
+except ImportError:
+    _pyyaml = None
+    HAVE_PYYAML = False
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / ".github" / "agents"
 
@@ -187,20 +204,49 @@ def strip_yaml_comment(line: str) -> str:
     return line.rstrip()
 
 
+def is_quoted_yaml_scalar(s: str) -> bool:
+    return len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'"))
+
+
+def require_no_unquoted_colon_space(s: str, context: str) -> None:
+    """Hard-fail rule (live-parser incident, 2026-09-01): a plain (unquoted)
+    YAML scalar containing ': ' (colon-space) is invalid — real YAML treats
+    an unescaped colon-space as the start of a nested mapping, ambiguous
+    with plain scalar content. copilot CLI 1.0.82 rejected an installed
+    mozart.agent.md with exactly this — "failed to parse YAML frontmatter:
+    mapping values are not allowed in this context" — because this repo's
+    own parser (which only ever splits on the first ':' on a line) silently
+    accepted what real YAML refuses. Quoted scalars are exempt: real YAML
+    allows ': ' freely inside a quoted string."""
+    if is_quoted_yaml_scalar(s):
+        return
+    if ": " in s:
+        raise FrontmatterError(
+            f"{context} is an unquoted value containing ': ' (colon-space), which real "
+            f"YAML forbids in a plain scalar (ambiguous with a nested mapping key) — "
+            f"quote the whole value (e.g. \"...\") to fix. This is the live-parser "
+            f"incident: copilot CLI 1.0.82 rejected an installed mozart.agent.md with "
+            f"'mapping values are not allowed in this context' for exactly this shape."
+        )
+
+
 def parse_yaml_scalar(s: str):
     s = s.strip()
-    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+    if is_quoted_yaml_scalar(s):
         return s[1:-1]
     return s
 
 
-def parse_inline_list(s: str):
+def parse_inline_list(s: str, context: str = "inline list item"):
     s = s.strip()
     assert s.startswith("[") and s.endswith("]")
     inner = s[1:-1].strip()
     if not inner:
         return []
-    return [parse_yaml_scalar(x) for x in inner.split(",")]
+    items = [x.strip() for x in inner.split(",")]
+    for item in items:
+        require_no_unquoted_colon_space(item, context)
+    return [parse_yaml_scalar(x) for x in items]
 
 
 def parse_frontmatter(fm_lines):
@@ -234,7 +280,9 @@ def parse_frontmatter(fm_lines):
                 indent = len(nxt_raw) - len(nxt_raw.lstrip(" "))
                 stripped = nxt.strip()
                 if stripped.startswith("- ") and indent > 0:
-                    block_items.append(parse_yaml_scalar(stripped[2:]))
+                    item = stripped[2:].strip()
+                    require_no_unquoted_colon_space(item, f"key {key!r} list item")
+                    block_items.append(parse_yaml_scalar(item))
                     j += 1
                     continue
                 break
@@ -247,9 +295,10 @@ def parse_frontmatter(fm_lines):
             i = j
             continue
         if rest.startswith("["):
-            data[key] = parse_inline_list(rest)
+            data[key] = parse_inline_list(rest, context=f"key {key!r} list item")
             kinds[key] = "list"
         else:
+            require_no_unquoted_colon_space(rest, f"key {key!r}")
             data[key] = parse_yaml_scalar(rest)
             kinds[key] = "scalar"
         i += 1
@@ -348,6 +397,32 @@ class ValidationResult:
     body_chars: int = 0
 
 
+def pyyaml_crosscheck(fm_lines) -> list:
+    """Best-effort second opinion (live-parser incident, 2026-09-01): when
+    PyYAML is importable, re-parse the frontmatter block with the real,
+    spec-accurate parser instead of this file's hand-rolled subset. Returns
+    a list of error strings (empty when PyYAML is unavailable or the block
+    parses cleanly) — never raises, so a missing PyYAML dependency never
+    turns into a validator crash."""
+    if not HAVE_PYYAML:
+        return []
+    try:
+        _pyyaml.safe_load("\n".join(fm_lines))
+    except _pyyaml.YAMLError as e:
+        return [f"PyYAML cross-check: frontmatter is not valid YAML: {e}"]
+    return []
+
+
+def yaml_crosscheck_mode_note() -> str:
+    """One line naming which frontmatter parser(s) ran, printed by every
+    entry point that validates a file — so a pass is attributable to the
+    hand-rolled parser alone or to both, never assumed (live-parser
+    incident, 2026-09-01)."""
+    if HAVE_PYYAML:
+        return "frontmatter validation mode: hand-rolled parser + PyYAML cross-check (both ran)"
+    return "frontmatter validation mode: hand-rolled parser only (PyYAML not importable — cross-check skipped)"
+
+
 def agent_stem(path: Path) -> str:
     name = path.name
     if name.endswith(".agent.md"):
@@ -384,6 +459,13 @@ def validate_agent_file(path: Path) -> ValidationResult:
 
     stem = agent_stem(path)
     errors = result.errors
+
+    # PyYAML cross-check (best-effort, silent-skip when unavailable — see
+    # HAVE_PYYAML / pyyaml_crosscheck above). Runs even though our own
+    # hand-rolled parser already succeeded above: the two parsers accept
+    # different subsets, and this is specifically the second opinion that
+    # would have caught the live-parser incident before install.
+    errors.extend(pyyaml_crosscheck(fm_lines))
 
     # name == filename stem
     name = data.get("name")
@@ -510,6 +592,7 @@ def validate_agent_file(path: Path) -> ValidationResult:
 # --------------------------------------------------------------------------
 
 def run_self_test(forms: bool) -> int:
+    print(yaml_crosscheck_mode_note())
     ok = True
 
     def check_accept(p: Path, expect_warn: bool = False) -> bool:
@@ -575,6 +658,7 @@ def run_self_test(forms: bool) -> int:
 # --------------------------------------------------------------------------
 
 def cmd_file(path_str: str) -> int:
+    print(yaml_crosscheck_mode_note())
     p = Path(path_str)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -601,6 +685,7 @@ def discover_agent_files(agents_dir: Path = None):
 
 
 def cmd_validate_all(min_agents) -> int:
+    print(yaml_crosscheck_mode_note())
     files = discover_agent_files()
     any_fail = False
     invocable_true = []

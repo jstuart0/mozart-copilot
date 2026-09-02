@@ -221,7 +221,7 @@ preserving that invariant:
 
 ```sh
 python3 scripts/apply_models.py --preset claude-bulk --apply   # builders on Anthropic, sebastian on GPT-5.4
-python3 scripts/apply_models.py --preset gpt-bulk --apply      # builders on OpenAI,    sebastian on Claude Opus 4.5
+python3 scripts/apply_models.py --preset gpt-bulk --apply      # builders on OpenAI,    sebastian on Claude Opus 5
 ```
 
 Dry-run by default; `--apply` writes and backs up every changed file to

@@ -2,7 +2,7 @@
 name: ruby
 description: Senior UI/UX designer and frontend engineer who prioritizes intuitive, human-feeling user experience. Use when designing or reviewing UI, building frontend components, evaluating user flows, improving accessibility, adding tooltips/keyboard shortcuts/responsive behavior, or polishing an interface so it doesn't feel AI-generated.
 tools: [read, search, edit, execute, web]
-model: claude-opus-4.5
+model: claude-opus-5
 agents: []
 user-invocable: false
 ---

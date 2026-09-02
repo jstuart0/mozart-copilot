@@ -1,0 +1,22 @@
+// Negative fixture for check_agents.py --map --agents-dir --min-agents.
+// New in P9: the "roster floor violation" case. This map covers EXACTLY the
+// two-agent roster in tests/fixtures/roster-floor-agents/ (mozart + jackson),
+// so structure, coverage and mozart's allowlist all pass cleanly. The only
+// failure it can produce is the roster floor: run it against that 2-file roster
+// with a floor that the roster cannot meet, e.g.
+//   check_agents.py --map tests/fixtures/map-roster-floor.jsonc \
+//     --agents-dir tests/fixtures/roster-floor-agents --min-agents 22
+// yields exactly one FAIL (2 agent files found, --min-agents requires >= 22).
+// The roster floor is a check_agents.py --map concern only; apply_models.py's
+// --validate-map has no --min-agents, so this fixture is single-entry-point by
+// construction.
+{
+  "roles": {
+    "conductor": { "model": "claude-opus-5", "family": "anthropic", "fallback": "claude-sonnet-5" },
+    "builders": { "model": "claude-sonnet-4.5", "family": "anthropic", "fallback": "claude-sonnet-4.1" }
+  },
+  "agents": {
+    "mozart": "conductor",
+    "jackson": "builders"
+  }
+}

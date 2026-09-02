@@ -1345,6 +1345,14 @@ def build_parser():
              "or is skipped when neither is set.",
     )
     p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
+    p.add_argument(
+        "--agents-dir",
+        metavar="DIR",
+        help="validate against an installed agents directory (e.g. <copilot-home>/agents) instead of "
+             ".github/agents/. Consumed by --map (roster coverage + mozart's allowlist); the modifier "
+             "matrix rejects it with --emit-runtime-reads, whose stream is defined over the source roster "
+             "only (Y20).",
+    )
     return p
 
 
@@ -1360,10 +1368,17 @@ def validate_modifier_matrix(args) -> int:
                               no-action roster validate-all, which also reads it)
       --layout             -> --check-install only
       --upstream-mozart-md -> --check-carve only
+      --agents-dir         -> --map, --check-install, --check-carve
 
-    --agents-dir is not a check_agents.py flag until Phase P9; until then it is
-    rejected upstream by argparse as an unrecognized argument (also exit 2),
-    which is what backstops Y20's --emit-runtime-reads --agents-dir case here."""
+    Z5 (found by jackson at P6): before P9, --agents-dir was not a
+    check_agents.py flag, so argparse rejected --emit-runtime-reads --agents-dir
+    as an *unrecognized argument* (also exit 2). P9 adds the flag, so that
+    backstop is gone: --agents-dir alongside --emit-runtime-reads must now be
+    rejected by THIS matrix instead, or it would degrade from
+    "unrecognized" to "accepted-and-silently-ignored" — the exact defect this
+    matrix exists to kill. --emit-runtime-reads is deliberately absent from
+    --agents-dir's consumed_by list, so the enforce() below rejects the pair
+    (exit 2) with a message naming both flags."""
     action_flags = {
         "--self-test": bool(args.self_test),
         "--file": bool(args.file),
@@ -1398,6 +1413,10 @@ def validate_modifier_matrix(args) -> int:
             return rc
     if args.upstream_mozart_md is not None:
         rc = enforce("--upstream-mozart-md", ["--check-carve"], default_consumes=False)
+        if rc:
+            return rc
+    if args.agents_dir is not None:
+        rc = enforce("--agents-dir", ["--map", "--check-install", "--check-carve"], default_consumes=False)
         if rc:
             return rc
     return 0
@@ -1477,6 +1496,17 @@ def main(argv=None) -> int:
         # Sole action: no banner, pristine TSV on stdout.
         return cmd_emit_runtime_reads()
 
+    # --agents-dir DIR overrides the roster the map checks walk (default
+    # .github/agents/). Resolved once here; only --map consumes it (roster
+    # coverage + mozart's allowlist). --check-install and --check-carve derive
+    # their own target from their own flag value, so the matrix permits the
+    # combination but they do not read this override.
+    resolved_agents_dir = None
+    if args.agents_dir is not None:
+        resolved_agents_dir = Path(args.agents_dir)
+        if not resolved_agents_dir.is_absolute():
+            resolved_agents_dir = REPO_ROOT / resolved_agents_dir
+
     # Collect the requested actions in parser-declaration order. Each entry is
     # (label, thunk); the label is printed as a banner so the aggregated output
     # attributes each block of lines to the action that produced it.
@@ -1486,7 +1516,7 @@ def main(argv=None) -> int:
     if args.file:
         actions.append(("file", lambda: cmd_file(args.file)))
     if args.map:
-        actions.append(("map", lambda: cmd_map(args.map, args.min_agents)))
+        actions.append(("map", lambda: cmd_map(args.map, args.min_agents, resolved_agents_dir)))
     if args.check_doc_refs:
         doc_refs_path = None if args.check_doc_refs is True else args.check_doc_refs
         actions.append(("check-doc-refs", lambda: cmd_check_doc_refs(doc_refs_path)))

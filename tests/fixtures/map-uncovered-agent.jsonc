@@ -1,11 +1,11 @@
 // Negative fixture for check_agents.py --map / apply_models.py --validate-map.
-// Regenerated in P9 (D-G): a full, otherwise-valid 22-agent map (the canonical
-// claude-bulk roster) with EXACTLY ONE injected defect — an extra agents entry
-// "phantom-agent" that has no corresponding .github/agents/phantom-agent.agent.md
-// file. This is the "map entry without agent file" case: run against the real
-// roster it produces exactly one FAIL (map assigns a role to a name with no
-// file) and nothing else. The pre-P9 stale form had a 2-agent roster and
-// exited 1 on ~20 unrelated coverage errors.
+// New in P9: a full, otherwise-valid 22-agent map with EXACTLY ONE injected
+// defect — the "percy" entry is omitted, so the agent file
+// .github/agents/percy.agent.md exists but has no map entry. This is the
+// "agent file without map entry" case (the mirror of map-unassigned-file):
+// run against the real roster it produces exactly one FAIL and nothing else.
+// percy's role ("reviewers") is still assigned to other agents, so removing
+// percy introduces no orphan role — only the uncovered agent file.
 {
   "roles": {
     "conductor": { "model": "claude-opus-5", "family": "anthropic", "fallback": "claude-sonnet-5" },
@@ -30,7 +30,6 @@
     "otto": "reviewers",
     "ian": "reviewers",
     "tessa": "reviewers",
-    "percy": "reviewers",
     "librarian": "reviewers",
     "dick": "reviewers",
     "sarah": "reviewers",
@@ -38,7 +37,6 @@
     "codebase-pattern-finder": "support",
     "web-search-researcher": "support",
     "codebase-locator": "fast-scan",
-    "sebastian": "validation",
-    "phantom-agent": "builders"
+    "sebastian": "validation"
   }
 }

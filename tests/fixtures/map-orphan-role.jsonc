@@ -1,13 +1,44 @@
 // Negative fixture for check_agents.py --map / apply_models.py --validate-map.
-// "orphan-role" is defined under roles but never assigned to any agent.
+// Regenerated in P9 (D-G): a full, otherwise-valid 22-agent map (the canonical
+// claude-bulk roster) with EXACTLY ONE injected defect — the role
+// "isolated-role" is defined but assigned to no agent. Run against the real
+// .github/agents/ roster this produces exactly one FAIL (the orphan role) and
+// nothing else, so the fixture proves the orphan-role check specifically rather
+// than drowning it in ~20 unrelated coverage errors (the pre-P9 stale form had
+// a 2-agent roster and exited 1 for the wrong reason).
 {
   "roles": {
-    "conductor": { "model": "claude-opus-4-5", "family": "anthropic", "fallback": "claude-opus-4-1" },
-    "builders": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" },
-    "orphan-role": { "model": "claude-sonnet-4-5", "family": "anthropic", "fallback": "claude-sonnet-4-1" }
+    "conductor": { "model": "claude-opus-5", "family": "anthropic", "fallback": "claude-sonnet-5" },
+    "deep-reviewers": { "model": "claude-opus-5", "family": "anthropic", "fallback": "claude-sonnet-5" },
+    "builders": { "model": "claude-sonnet-4.5", "family": "anthropic", "fallback": "claude-sonnet-4.1" },
+    "reviewers": { "model": "claude-sonnet-4.5", "family": "anthropic", "fallback": "claude-sonnet-4.1" },
+    "support": { "model": "claude-sonnet-4.5", "family": "anthropic", "fallback": "claude-sonnet-4.1" },
+    "fast-scan": { "model": "claude-haiku-4.5", "family": "anthropic", "fallback": "claude-haiku-4.1" },
+    "validation": { "model": "gpt-5.4", "family": "openai", "fallback": "gpt-5.1" },
+    "isolated-role": { "model": "claude-sonnet-4.5", "family": "anthropic", "fallback": "claude-sonnet-4.1" }
   },
   "agents": {
     "mozart": "conductor",
-    "jackson": "builders"
+    "harry": "deep-reviewers",
+    "bob": "deep-reviewers",
+    "ruby": "deep-reviewers",
+    "valerie": "deep-reviewers",
+    "jackson": "builders",
+    "hank": "builders",
+    "scott": "builders",
+    "dexter": "reviewers",
+    "xander": "reviewers",
+    "otto": "reviewers",
+    "ian": "reviewers",
+    "tessa": "reviewers",
+    "percy": "reviewers",
+    "librarian": "reviewers",
+    "dick": "reviewers",
+    "sarah": "reviewers",
+    "codebase-analyzer": "support",
+    "codebase-pattern-finder": "support",
+    "web-search-researcher": "support",
+    "codebase-locator": "fast-scan",
+    "sebastian": "validation"
   }
 }

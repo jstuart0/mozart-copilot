@@ -49,7 +49,7 @@ jobs:
         run: python3 -m py_compile scripts/check_agents.py scripts/apply_models.py
 
       - name: Parse — shell scripts have valid syntax
-        run: bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
+        run: bash -n scripts/install-bundle.sh scripts/uninstall.sh scripts/mozart scripts/mozart-lint.sh scripts/mozart-metrics.sh scripts/check-fingerprints.sh
 
       - name: No personal-infrastructure fingerprints (Phase P3 — C1 drift-guard)
         run: bash scripts/check-fingerprints.sh
@@ -150,6 +150,178 @@ jobs:
             echo "missing the manifest-leaf symlink-refusal message" >&2; cat out.txt; exit 1
           fi
           if [ -e "$C/pwned" ]; then echo "the symlink target was written through — refusal did not hold" >&2; exit 1; fi
+
+      - name: Install-check — a relative install root is recorded ABSOLUTE in the manifest (sebastian HIGH-1)
+        # HIGH-1: raw relative --copilot-home/--bin-dir used to flow verbatim
+        # into the manifest, which promises absolute paths; a recorded
+        # 'tools/mozart' is resolved by the uninstall against ITS OWN cwd and
+        # can delete an unrelated byte-identical file. The installer now
+        # canonicalizes every install root to an absolute physical path before
+        # any DEST_PATH is built. Run from a scratch cwd with relative roots and
+        # assert EVERY manifest path is absolute.
+        run: |
+          H="$(mktemp -d)"; WORK="$(mktemp -d)"
+          ( cd "$WORK" && bash "$OLDPWD/scripts/install-bundle.sh" --user-scope --home "$H" --copilot-home rel/ch --bin-dir rel/bin --apply ) > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "expected exit 0 for a relative-root install, got $rc" >&2; cat out.txt; exit 1; fi
+          man="$WORK/rel/ch/mozart-manifest.txt"
+          if [ ! -f "$man" ]; then echo "manifest not written at $man" >&2; cat out.txt; exit 1; fi
+          nonabs=$(awk '{print $2}' "$man" | grep -vc '^/' || true)
+          if [ "$nonabs" -ne 0 ]; then echo "manifest holds $nonabs non-absolute path(s):" >&2; awk '{print $2}' "$man" | grep -v '^/' >&2; exit 1; fi
+          # And the wrapper-location allowlist entry is absolute too.
+          grep -q '^/' "$WORK/rel/ch/mozart-trust/wrapper-paths" || { echo "wrapper allowlist entry not absolute" >&2; cat "$WORK/rel/ch/mozart-trust/wrapper-paths" >&2; exit 1; }
+
+      - name: Install-check — a trust root with a control character is refused before any write (sebastian HIGH-3)
+        # HIGH-3: P15 rejects control chars in manifest paths; P16 did NOT do the
+        # same for trust roots. A canonical root with an embedded newline would
+        # be written as MULTIPLE trusted roots — one install root injecting trust
+        # for another repo and bypassing the provenance gate. The installer must
+        # apply the same control-char rejection to the canonical root BEFORE any
+        # bytes are written. Drive it via --target on a repo dir whose name
+        # contains a newline, with an existing scratch Copilot home so trust
+        # recording is attempted.
+        run: |
+          W="$(mktemp -d)"
+          # Build a directory name containing a real newline without embedding a
+          # literal newline in this YAML block scalar.
+          nl="$(printf '\nird')"
+          tdir="$W/we${nl}"
+          mkdir -p "$tdir/.github"
+          CH="$(mktemp -d)/.copilot"; mkdir -p "$CH"
+          COPILOT_HOME="$CH" bash scripts/install-bundle.sh --target "$tdir" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing the control-char trust root, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'control character' out.txt || { echo "missing control-char refusal message" >&2; cat out.txt; exit 1; }
+          if [ -e "$CH/mozart-trust/roots" ]; then echo "trust roots file was written despite the refusal" >&2; exit 1; fi
+          if [ -d "$tdir/.github/agents" ]; then echo "agents dir was created before the trust preflight refused (not fail-before-write)" >&2; exit 1; fi
+
+      - name: Install-check — a refusal preflights BEFORE any artifact is written (sebastian HIGH-4)
+        # HIGH-4: user-scope artifacts were copied before the manifest/trust
+        # validation ran, so a refusal could exit nonzero AFTER changing the
+        # bundle/agents/wrapper, leaving files untracked. Validation is now a
+        # preflight before the first mkdir/rm/cp. Pre-create a symlinked
+        # mozart-trust dir (a refusal condition surfaced only during trust
+        # recording, previously at the very end) and assert NOTHING was written.
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"; mkdir -p "$CH"
+          ln -s "$(mktemp -d)/elsewhere" "$CH/mozart-trust"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 for the symlinked trust dir, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'trust dir' out.txt || { echo "missing trust-dir symlink refusal message" >&2; cat out.txt; exit 1; }
+          [ -e "$CH/mozart/VERSION" ] && { echo "bundle was written despite the refusal (not fail-before-write)" >&2; exit 1; } || true
+          [ -d "$CH/agents" ] && { echo "agents dir was written despite the refusal (not fail-before-write)" >&2; exit 1; } || true
+          [ -e "$B/mozart" ] && { echo "wrapper was written despite the refusal (not fail-before-write)" >&2; exit 1; } || true
+          echo "ok: refusal left no artifacts"
+
+      - name: Install-check — temp writes use unpredictable names, not predictable *.tmp.\$\$ (sebastian HIGH-5)
+        # HIGH-5: predictable "$dest.tmp.$$" temp names are symlink-followable —
+        # cp/printf into them follow a pre-existing symlink at the temp pathname.
+        # The installer now creates temps via mktemp (O_EXCL, unpredictable) and
+        # cleans them via a trap. Static guard: no live *.tmp.$$ usage survives,
+        # and a clean install leaves no stray temp behind.
+        run: |
+          if grep -vE '^[[:space:]]*#' scripts/install-bundle.sh | grep -nE '(cp|printf|mv)[^#]*\.tmp\.\$\$'; then
+            echo "a live predictable-temp (.tmp.\$\$) usage survives in install-bundle.sh" >&2; exit 1
+          fi
+          grep -q 'mktemp "\$dir/.mozart-tmp' scripts/install-bundle.sh || { echo "install-bundle.sh does not use the mktemp temp template" >&2; exit 1; }
+          H="$(mktemp -d)"; B="$(mktemp -d)"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          leftover=$(find "$H" "$B" -name '.mozart-tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$leftover" -ne 0 ]; then echo "a clean install left $leftover stray temp file(s)" >&2; find "$H" "$B" -name '.mozart-tmp.*' >&2; exit 1; fi
+
+      - name: Uninstall — roundtrip removes only agents+wrapper, leaves bundle+manifest (sebastian HIGH-2)
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          before=$(ls "$CH/agents" | wc -l | tr -d ' ')
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "expected exit 0 for a clean uninstall, got $rc" >&2; cat out.txt; exit 1; fi
+          removed=$(grep -c '^removed:' out.txt)
+          if [ "$removed" -ne "$((before + 1))" ]; then echo "expected $((before + 1)) removals (agents + wrapper), got $removed" >&2; cat out.txt; exit 1; fi
+          [ -d "$CH/agents" ] && [ -z "$(ls -A "$CH/agents")" ] || { echo "agents dir not emptied" >&2; exit 1; }
+          [ -e "$B/mozart" ] && { echo "wrapper not removed" >&2; exit 1; } || true
+          [ -f "$CH/mozart/VERSION" ] || { echo "bundle was removed (should be left in place)" >&2; exit 1; }
+          [ -f "$CH/mozart-manifest.txt" ] || { echo "manifest was removed (should be left in place)" >&2; exit 1; }
+
+      - name: Uninstall — a single malformed manifest line deletes NOTHING (sebastian HIGH-2)
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          before=$(ls "$CH/agents" | wc -l | tr -d ' ')
+          printf 'this-line-has-no-valid-sha-or-separator\n' >> "$CH/mozart-manifest.txt"
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 on a malformed line, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'deleting nothing' out.txt || { echo "missing 'deleting nothing' refusal" >&2; cat out.txt; exit 1; }
+          after=$(ls "$CH/agents" | wc -l | tr -d ' ')
+          if [ "$after" -ne "$before" ]; then echo "a malformed line still deleted files ($before -> $after)" >&2; exit 1; fi
+          [ -e "$B/mozart" ] || { echo "wrapper was deleted despite the malformed-line abort" >&2; exit 1; }
+
+      - name: Uninstall — a checksum-matching path outside the namespace is refused (sebastian HIGH-2)
+        # The lexical '*/mozart' basename glob and lexical 'agents/*' test are
+        # gone: a tampered manifest that appends a real, checksum-matching file
+        # OUTSIDE the owned namespace (here a 'mozart'-named file the attacker
+        # controls, and a path with a '..' escape) must delete NEITHER.
+        run: |
+          H="$(mktemp -d)"; B="$(mktemp -d)"; CH="$H/.copilot"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$B" --apply >/dev/null 2>&1
+          man="$CH/mozart-manifest.txt"
+          # (a) a 'mozart'-named file elsewhere, with a valid matching checksum.
+          evil="$(mktemp -d)/mozart"; cp "$B/mozart" "$evil"
+          esha=$(sha256sum "$evil" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$evil" | awk '{print $1}')
+          cp "$man" "$man.bak"
+          printf '%s  %s\n' "$esha" "$evil" >> "$man"
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing the out-of-namespace 'mozart' file, got $rc" >&2; cat out.txt; exit 1; fi
+          grep -qF 'outside the owned namespace' out.txt || { echo "missing out-of-namespace refusal" >&2; cat out.txt; exit 1; }
+          [ -f "$evil" ] || { echo "an out-of-namespace 'mozart' file was DELETED — basename glob still live" >&2; exit 1; }
+          # (b) a '..' escape path is refused (non-normalized), nothing deleted.
+          cp "$man.bak" "$man"
+          printf '%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "$CH/agents/../../../etc/shadow" >> "$man"
+          COPILOT_HOME="$CH" bash scripts/uninstall.sh > out2.txt 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 refusing a '..' escape, got $rc" >&2; cat out2.txt; exit 1; fi
+          grep -qE "('\\.\\.'|not absolute|not normalized|component)" out2.txt || { echo "missing non-normalized refusal" >&2; cat out2.txt; exit 1; }
+
+      - name: Uninstall — README block is byte-identical to scripts/uninstall.sh
+        # The README ships a self-contained copy of the uninstall so a user
+        # whose checkout is gone can still run it. Enforce that the documented
+        # block never drifts from the tested script.
+        run: |
+          awk '/BEGIN uninstall.sh/{f=1;next} /END uninstall.sh/{f=0;next} f' README.md | sed '/^```/d' > extracted.sh
+          if ! diff -u extracted.sh scripts/uninstall.sh; then
+            echo "the README uninstall block has drifted from scripts/uninstall.sh — update both" >&2; exit 1
+          fi
+
+      - name: Provenance gate — the physical cwd is unresolvable, launch fails closed with a diagnostic (sebastian MEDIUM-1)
+        # MEDIUM-1: scripts/mozart's GATE_ROOT="$(pwd -P)" was the last unguarded
+        # assignment under set -euo pipefail; if pwd -P fails (cwd deleted), the
+        # script exited BEFORE the provenance refusal banner with a
+        # nondeterministic status. Now guarded to fail closed with a diagnostic.
+        # Simulate by launching the wrapper from a directory removed underneath
+        # the process. W7b: exact exit 1 AND the required substring.
+        run: |
+          S="$(mktemp -d)"; printf '#!/bin/sh\nexit 0\n' > "$S/copilot"; chmod +x "$S/copilot"; export PATH="$S:$PATH"
+          H="$(mktemp -d)"; BIN="$(mktemp -d)"
+          bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$BIN" --apply >/dev/null 2>&1
+          W="$(mktemp -d)"
+          out=$(cd "$W" && rmdir "$W" && HOME="$H" bash "$BIN/mozart" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1 when pwd -P fails, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'cannot resolve the physical working directory' || { echo "missing fail-closed provenance diagnostic — $out" >&2; exit 1; }
+
+      - name: apply_models — write actions cannot be silently ignored by a read/write mix (sebastian HIGH-6)
+        # HIGH-6: --preset/--apply/default-stamp were not in the aggregating
+        # dispatcher, so a read check (--check/--explain/--check-*) short-circuited
+        # and returned BEFORE cmd_stamp — silently ignoring the requested write.
+        # Every currently-ignored combination must now be rejected (exit 2), and
+        # legitimate single-intent invocations must still work.
+        run: |
+          for combo in "--preset claude-bulk --apply --check-tiers" "--preset gpt-bulk --check" "--apply --explain" "--preset claude-bulk --check-families" "--apply --validate-map config/model-maps/gpt-bulk.jsonc"; do
+            out=$(python3 scripts/apply_models.py $combo 2>&1) && rc=0 || rc=$?
+            if [ "$rc" -ne 2 ]; then echo "[$combo] expected exit 2, got $rc — $out" >&2; exit 1; fi
+            printf '%s\n' "$out" | grep -qF 'cannot be combined with' || { echo "[$combo] missing mixed read/write refusal — $out" >&2; exit 1; }
+          done
+          # Positive controls: single-intent read and write invocations still work.
+          python3 scripts/apply_models.py --check >/dev/null 2>&1 || { echo "--check regressed" >&2; exit 1; }
+          python3 scripts/apply_models.py --check-families --check-tiers >/dev/null 2>&1 || { echo "read-combo regressed" >&2; exit 1; }
+          out=$(python3 scripts/apply_models.py 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ]; then echo "bare dry-run stamp regressed: exit $rc — $out" >&2; exit 1; fi
 
       - name: Provenance gate — identical bundle is silent, trusted differing bundle launches silently (P17)
         # Y2: the harness launches with HOME="$H" and NO COPILOT_HOME, so

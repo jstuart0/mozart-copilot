@@ -75,4 +75,93 @@ if [ -n "$ROOT" ] && [ "$ROOT" != "$(pwd -P)" ]; then
   cd "$ROOT"
 fi
 
+# --------------------------------------------------------------------------
+# Provenance gate (P17, D-E/D-H). The LAST check before exec. When the repo
+# this launch is rooted in ships its own bundle (.github/mozart), compare it
+# against the installed bundle; on ANY difference, REFUSE unless the repo root
+# is trusted — recorded at install time (P16), or named for THIS invocation by
+# the MOZART_TRUST_REPO_BUNDLE override. Everything else fails closed, exit 1.
+#
+# Consent + baseline comparison, NOT authenticity (P18): it proves "this tree
+# is not the one you installed from", never "this tree is genuine". Never runs
+# when there is no repo-local bundle. Prints nothing on the trusted or
+# byte-identical paths. The pre-existing exits above (127 no copilot, 1 no
+# bundle, 1 custom-home contract) are all upstream of here and unchanged.
+# --------------------------------------------------------------------------
+
+# dev_ino DIR — canonical identity of a directory as "device:inode", or empty
+# on failure. COPIED VERBATIM from scripts/install-bundle.sh (D-H mandates ONE
+# identity routine across the recorded root, the current root and the override;
+# the script is the canonical source, this is the copy). GNU-FIRST (`stat -c`),
+# BSD-SECOND (`stat -f`): on GNU coreutils `stat -f` is --file-system and
+# '%d:%i' are VALID there, returning per-VOLUME stats identical for every path
+# on one filesystem — a BSD-first order would make the gate trust any two
+# co-located directories, failing OPEN on every Linux host and CI runner. BSD
+# `stat` rejects `-c` outright, so GNU-first falls through correctly there.
+# Empty output on EITHER side of a comparison is a NON-match (asserted below).
+dev_ino() { stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null; }
+
+GATE_ROOT="$(pwd -P)"
+REPO_BUNDLE="$GATE_ROOT/.github/mozart"
+
+if [ -f "$REPO_BUNDLE/VERSION" ] && ! diff -r -q "$REPO_BUNDLE" "$BUNDLE" >/dev/null 2>&1; then
+  # The repo ships a bundle that differs from the installed one. Exempt only a
+  # trusted root; otherwise refuse. (diff exit 2 on error also lands here —
+  # fail closed.)
+  gate_root_id="$(dev_ino "$GATE_ROOT")" || gate_root_id=""
+  trusted=0
+
+  # 1. Per-invocation override (root-scoped, never a global boolean): the value
+  #    must name THIS repo root, by exact physical path or by dev_ino identity.
+  override="${MOZART_TRUST_REPO_BUNDLE:-}"
+  if [ -n "$override" ]; then
+    # `|| var=""` keeps a failed resolution (nonexistent path -> nonzero) from
+    # tripping `set -e`; the empty value then fails closed below.
+    override_canon="$(cd "$override" 2>/dev/null && pwd -P)" || override_canon=""
+    override_id="$(dev_ino "$override")" || override_id=""
+    if [ -n "$override_canon" ] && [ "$override_canon" = "$GATE_ROOT" ]; then
+      trusted=1
+    elif [ -n "$gate_root_id" ] && [ -n "$override_id" ] && [ "$override_id" = "$gate_root_id" ]; then
+      # Both dev_ino sides EXPLICITLY non-empty AND equal. An empty dev_ino on
+      # EITHER side is a NON-match — fail closed, never inherited implicitly.
+      trusted=1
+    fi
+  fi
+
+  # 2. Recorded trust roots (user-side state; an absent/unreadable file means
+  #    NO roots — fail closed, never an error that blocks the launch for an
+  #    unrelated reason).
+  if [ "$trusted" -eq 0 ]; then
+    rootsfile="$HOME_DIR/mozart-trust/roots"
+    if [ -f "$rootsfile" ] && [ -r "$rootsfile" ]; then
+      while IFS= read -r rec || [ -n "$rec" ]; do
+        [ -z "$rec" ] && continue
+        if [ "$rec" = "$GATE_ROOT" ]; then trusted=1; break; fi
+        # `|| rec_id=""`: a stale/nonexistent recorded root (dev_ino nonzero)
+        # must be a NON-match, NOT a `set -e` exit that would refuse a
+        # legitimately-trusted root recorded on a LATER line.
+        rec_id="$(dev_ino "$rec")" || rec_id=""
+        if [ -n "$gate_root_id" ] && [ -n "$rec_id" ] && [ "$rec_id" = "$gate_root_id" ]; then
+          # Empty dev_ino on EITHER side is an explicit NON-match (fail closed).
+          trusted=1; break
+        fi
+      done < "$rootsfile"
+    fi
+  fi
+
+  if [ "$trusted" -eq 0 ]; then
+    echo "mozart: REFUSED — bundle provenance mismatch." >&2
+    echo "  the bundle shipped by this repo differs from the one you installed:" >&2
+    echo "    repo-local bundle : $REPO_BUNDLE" >&2
+    echo "    installed bundle  : $BUNDLE" >&2
+    echo "    repo root         : $GATE_ROOT" >&2
+    echo "  this proves the tree is not the one you installed from — it does NOT prove the tree is malicious, and it does NOT prove it is genuine (consent + baseline comparison, not authenticity)." >&2
+    echo "  if you trust this repo, either reinstall from it to record it as a trusted root:" >&2
+    echo "    scripts/install-bundle.sh --user-scope --apply   (run from $GATE_ROOT)" >&2
+    echo "  or trust it for THIS invocation only (root-scoped, never a global boolean; do NOT auto-load it via direnv/.envrc):" >&2
+    echo "    MOZART_TRUST_REPO_BUNDLE=\"$GATE_ROOT\" mozart \"<task>\"" >&2
+    exit 1
+  fi
+fi
+
 exec copilot --agent mozart "${ADD_DIRS[@]}" "$@"

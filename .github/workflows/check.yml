@@ -151,6 +151,102 @@ jobs:
           fi
           if [ -e "$C/pwned" ]; then echo "the symlink target was written through — refusal did not hold" >&2; exit 1; fi
 
+      - name: Provenance gate — identical bundle is silent, trusted differing bundle launches silently (P17)
+        # Y2: the harness launches with HOME="$H" and NO COPILOT_HOME, so
+        # BUNDLE==DEFAULT and the custom-home contract is skipped — the gate is
+        # actually reached. A synthetic consuming repo ($R) carries its own
+        # repo-local bundle; a stub `copilot` on PATH makes a reached `exec`
+        # observable as exit 0 / empty output. mozart-provenance
+        run: |
+          S="$(mktemp -d)"; printf '#!/bin/sh\nexit 0\n' > "$S/copilot"; chmod +x "$S/copilot"; export PATH="$S:$PATH"
+          W="$PWD/scripts/mozart"
+          H="$(mktemp -d)"; bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$(mktemp -d)" --apply >/dev/null
+          R="$(mktemp -d)"; ( cd "$R" && git init -q ); mkdir -p "$R/.github/mozart"; cp -R .github/mozart/. "$R/.github/mozart/"
+          REPOROOT="$(cd "$R" && pwd -P)"; cd "$R"
+          # (4) identical repo-local vs installed -> silent no-op.
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] || [ -n "$OUT" ]; then echo "identical bundle should launch silently; rc=$rc out=[$OUT]" >&2; exit 1; fi
+          # (1) trusted root exempts a DIFFERING bundle (trust, not identity).
+          echo x >> "$R/.github/mozart/VERSION"
+          echo "$REPOROOT" >> "$H/.copilot/mozart-trust/roots"
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] || [ -n "$OUT" ]; then echo "trusted differing bundle should launch silently; rc=$rc out=[$OUT]" >&2; exit 1; fi
+
+      - name: Provenance gate — untrusted differing bundle is refused with the banner and the repo root (P17, Y2)
+        # Y2: assert the provenance-specific banner AND the offending repo root,
+        # never a bare exit 1 (three distinct conditions in scripts/mozart exit
+        # 1). mozart-provenance
+        run: |
+          S="$(mktemp -d)"; printf '#!/bin/sh\nexit 0\n' > "$S/copilot"; chmod +x "$S/copilot"; export PATH="$S:$PATH"
+          W="$PWD/scripts/mozart"
+          H="$(mktemp -d)"; bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$(mktemp -d)" --apply >/dev/null
+          R="$(mktemp -d)"; ( cd "$R" && git init -q ); mkdir -p "$R/.github/mozart"; cp -R .github/mozart/. "$R/.github/mozart/"
+          REPOROOT="$(cd "$R" && pwd -P)"; cd "$R"
+          echo x >> "$R/.github/mozart/VERSION"          # differ from installed
+          : > "$H/.copilot/mozart-trust/roots"           # untrusted
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc" >&2; echo "$OUT" >&2; exit 1; fi
+          echo "$OUT" | grep -q 'bundle provenance' || { echo "missing provenance banner" >&2; echo "$OUT" >&2; exit 1; }
+          echo "$OUT" | grep -qF "$REPOROOT" || { echo "banner does not name the repo root" >&2; echo "$OUT" >&2; exit 1; }
+
+      - name: Provenance gate — forgery guards (probe files, VERSION 99.0.0) are still refused with the banner (P17, Y2)
+        # The gate keys on user-side state, never on repo content: a repo that
+        # ships install-bundle.sh + mozart.agent.md, or a repo-local VERSION of
+        # 99.0.0, is STILL refused. Both would pass with the gate deleted if we
+        # asserted exit 1 alone — so we assert the banner. mozart-provenance
+        run: |
+          S="$(mktemp -d)"; printf '#!/bin/sh\nexit 0\n' > "$S/copilot"; chmod +x "$S/copilot"; export PATH="$S:$PATH"
+          W="$PWD/scripts/mozart"
+          H="$(mktemp -d)"; bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$(mktemp -d)" --apply >/dev/null
+          R="$(mktemp -d)"; ( cd "$R" && git init -q ); mkdir -p "$R/.github/mozart" "$R/.github/agents" "$R/scripts"
+          cp -R .github/mozart/. "$R/.github/mozart/"
+          cp .github/agents/mozart.agent.md "$R/.github/agents/"   # forgery guard 1
+          cp scripts/install-bundle.sh "$R/scripts/"               # forgery guard 1
+          : > "$H/.copilot/mozart-trust/roots"; cd "$R"
+          # Guard 1: probe files present, bundle still differs -> refused.
+          echo x >> "$R/.github/mozart/VERSION"
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ] || ! echo "$OUT" | grep -q 'bundle provenance'; then echo "forgery guard 1 failed; rc=$rc" >&2; echo "$OUT" >&2; exit 1; fi
+          # Guard 2: repo-local VERSION 99.0.0 -> still refused.
+          echo "99.0.0" > "$R/.github/mozart/VERSION"
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ] || ! echo "$OUT" | grep -q 'bundle provenance'; then echo "forgery guard 2 failed; rc=$rc" >&2; echo "$OUT" >&2; exit 1; fi
+
+      - name: Provenance gate — MOZART_TRUST_REPO_BUNDLE is root-scoped, empty dev_ino is a non-match (P17, D-H)
+        # The override must name THIS root: a matching root launches, /tmp is
+        # refused with the banner. A stale/nonexistent recorded root (empty
+        # dev_ino) is an explicit NON-match and must not exit before the banner,
+        # nor block a valid later trusted line. mozart-provenance
+        run: |
+          S="$(mktemp -d)"; printf '#!/bin/sh\nexit 0\n' > "$S/copilot"; chmod +x "$S/copilot"; export PATH="$S:$PATH"
+          W="$PWD/scripts/mozart"
+          H="$(mktemp -d)"; bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$(mktemp -d)" --apply >/dev/null
+          R="$(mktemp -d)"; ( cd "$R" && git init -q ); mkdir -p "$R/.github/mozart"; cp -R .github/mozart/. "$R/.github/mozart/"
+          REPOROOT="$(cd "$R" && pwd -P)"; cd "$R"
+          echo x >> "$R/.github/mozart/VERSION"; : > "$H/.copilot/mozart-trust/roots"
+          # matching override -> silent launch
+          OUT="$(MOZART_TRUST_REPO_BUNDLE="$REPOROOT" HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] || [ -n "$OUT" ]; then echo "matching override should launch silently; rc=$rc out=[$OUT]" >&2; exit 1; fi
+          # non-matching override -> refused with banner
+          OUT="$(MOZART_TRUST_REPO_BUNDLE=/tmp HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ] || ! echo "$OUT" | grep -q 'bundle provenance'; then echo "non-matching override should refuse; rc=$rc" >&2; echo "$OUT" >&2; exit 1; fi
+          # empty dev_ino recorded root -> NON-match, refused WITH banner (not a set -e exit)
+          printf '%s\n' "/nonexistent/path/xyz" > "$H/.copilot/mozart-trust/roots"
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ] || ! echo "$OUT" | grep -q 'bundle provenance'; then echo "empty dev_ino must be a non-match refused with banner; rc=$rc" >&2; echo "$OUT" >&2; exit 1; fi
+          # a stale FIRST line must not block a valid trusted LATER line
+          printf '%s\n%s\n' "/nonexistent/path/xyz" "$REPOROOT" > "$H/.copilot/mozart-trust/roots"
+          OUT="$(HOME="$H" bash "$W" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] || [ -n "$OUT" ]; then echo "a valid later trusted line must exempt; rc=$rc out=[$OUT]" >&2; exit 1; fi
+
+      - name: Provenance gate — pre-existing exits are unchanged and upstream (P17)
+        # The gate is the LAST check; no-copilot (127) still fires first and
+        # unchanged. mozart-provenance
+        run: |
+          H="$(mktemp -d)"; bash scripts/install-bundle.sh --user-scope --home "$H" --bin-dir "$(mktemp -d)" --apply >/dev/null
+          PATH=/usr/bin HOME="$H" bash scripts/mozart >/dev/null 2>&1 && rc=0 || rc=$?
+          if [ "$rc" -ne 127 ]; then echo "expected 127 with no copilot on PATH, got $rc" >&2; exit 1; fi
+
       - name: Model map covers the roster and the allowlist (Phase 6 — step 30)
         run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 22
 

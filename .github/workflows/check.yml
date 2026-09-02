@@ -333,5 +333,57 @@ jobs:
             exit 1
           fi
 
+      # --- P11: one fixture family per remaining mozart-lint rule (H8). --------
+      # Each step asserts the named `LINT [<rule>]` line in stdout AND the W7b
+      # exit-code idiom (exact 1 — mozart-lint returns 2 for nothing-to-lint, so
+      # a bare `! cmd` or a non-zero test would pass vacuously on an empty root).
+      - name: Lint fixture — status-location drift is caught (P11)
+        run: |
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/status-location 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "status-location: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [status-location]' || { echo "status-location: missing named LINT line — $out" >&2; exit 1; }
+
+      - name: Lint fixture — duplicate-stages is caught (P11)
+        run: |
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/duplicate-stages 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "duplicate-stages: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [duplicate-stages]' || { echo "duplicate-stages: missing named LINT line — $out" >&2; exit 1; }
+
+      - name: Lint fixture — unclosed-stages is caught (P11)
+        run: |
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/unclosed-stages 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "unclosed-stages: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [unclosed-stages]' || { echo "unclosed-stages: missing named LINT line — $out" >&2; exit 1; }
+
+      - name: Lint fixture — stale-active is caught (P11)
+        # mtime-dependent (Check F): `git checkout` resets mtime to now, so the
+        # fixture MUST be back-dated with `touch -d` before the run or the check
+        # is a false green. The absolute date is safely >STALE_DAYS before any
+        # plausible CI run.
+        run: |
+          F=tests/fixtures/campaign/stale-active/.mozart/plans/active/stale-fixture.state.md
+          touch -d "2026-08-01 09:00:00" "$F"
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/stale-active 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "stale-active: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [stale-active]' || { echo "stale-active: missing named LINT line — $out" >&2; exit 1; }
+
+      - name: Lint fixture — stale-paths is caught (P11)
+        run: |
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/stale-paths 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "stale-paths: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [stale-paths]' || { echo "stale-paths: missing named LINT line — $out" >&2; exit 1; }
+
+      - name: Lint fixture — missing-12b is caught (P11)
+        run: |
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/missing-12b 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "missing-12b: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [missing-12b]' || { echo "missing-12b: missing named LINT line — $out" >&2; exit 1; }
+
+      - name: Lint fixture — stranded-artifacts is caught (P11)
+        run: |
+          out=$(bash scripts/mozart-lint.sh tests/fixtures/campaign/stranded-artifacts 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "stranded-artifacts: expected exit 1, got $rc — $out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'LINT [stranded-artifacts]' || { echo "stranded-artifacts: missing named LINT line — $out" >&2; exit 1; }
+
       - name: Metrics smoke
         run: bash scripts/mozart-metrics.sh tests/fixtures/campaign/clean

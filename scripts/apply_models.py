@@ -40,12 +40,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_agents import (  # noqa: E402
     REPO_ROOT,
-    AGENTS_DIR,
     FrontmatterError,
     agent_stem,
     discover_agent_files,
     load_jsonc,
+    rel_or_abs,
     split_frontmatter,
+    validate_map_structure,
 )
 
 CANONICAL_MAP = REPO_ROOT / ".github" / "mozart" / "config" / "model-map.jsonc"
@@ -110,15 +111,6 @@ def resolve_agents_dir(path_str) -> Path:
     return p
 
 
-def rel_or_abs(p: Path) -> str:
-    """Display a path relative to REPO_ROOT when it's under the source
-    checkout; absolute otherwise. An installed (out-of-tree) file — reached
-    via --agents-dir or an out-of-tree --validate-map path — makes
-    Path.relative_to(REPO_ROOT) raise ValueError, which this guards against
-    (bob H2)."""
-    return str(p.relative_to(REPO_ROOT)) if p.is_relative_to(REPO_ROOT) else str(p)
-
-
 def load_map(path: Path):
     """Returns (map_dict, errors). map_dict is {} on parse failure."""
     if not path.exists():
@@ -132,46 +124,11 @@ def load_map(path: Path):
     return m, []
 
 
-def validate_structure(m: dict, agents_dir: Path = None) -> list:
-    """The three baseline invariants shared by every check. Returns errors.
-
-    agents_dir (codex M2, bob H2): validate against an installed roster
-    (--agents-dir) instead of .github/agents/ — without this, an
-    installed-tree check would validate map coverage against the *source
-    checkout's* roster and report a clean bill for the wrong tree."""
-    errors = []
-    roles = m.get("roles")
-    agents_block = m.get("agents")
-    if not isinstance(roles, dict):
-        errors.append("map is missing a 'roles' object")
-        roles = {}
-    if not isinstance(agents_block, dict):
-        errors.append("map is missing an 'agents' object")
-        agents_block = {}
-
-    for role_name, role_def in roles.items():
-        model = role_def.get("model") if isinstance(role_def, dict) else None
-        if not isinstance(model, str) or not model.strip():
-            errors.append(f"role '{role_name}' has no non-empty 'model' scalar")
-
-    for agent_name, role in agents_block.items():
-        if role not in roles:
-            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
-
-    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
-    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
-    map_agents = set(agents_block.keys())
-    for missing in sorted(discovered - map_agents):
-        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
-    for extra in sorted(map_agents - discovered):
-        # bob N9: name the directory actually searched, not a hardcoded
-        # '.github/agents/' — under --agents-dir that literal would send the
-        # operator looking in the source checkout for a file missing from
-        # the *installed* tree.
-        missing_path = effective_agents_dir / f"{extra}.agent.md"
-        errors.append(f"map assigns a role to '{extra}' but no {rel_or_abs(missing_path)} exists")
-
-    return errors
+# validate_structure() lived here; deleted in P7 (D-B.2). Its logic — plus the
+# orphan-role check cmd_map used to own — now lives in
+# check_agents.validate_map_structure(), the single shared structural validator
+# imported above. The import edge stays one-directional (apply_models.py ->
+# check_agents.py); this module never gains a reverse dependency.
 
 
 def check_families(m: dict) -> list:
@@ -352,7 +309,7 @@ def cmd_check(path_str=None, agents_dir: Path = None) -> int:
         for e in errors:
             print(f"FAIL: {e}")
         return 1
-    struct_errors = validate_structure(m, agents_dir)
+    struct_errors = validate_map_structure(m, agents_dir)
     for e in struct_errors:
         print(f"FAIL: {e}")
 
@@ -376,7 +333,7 @@ def cmd_stamp(apply: bool, preset: str) -> int:
             for e in preset_errors:
                 print(f"FAIL: {e}")
             return 1
-        struct_errors = validate_structure(preset_map)
+        struct_errors = validate_map_structure(preset_map)
         if struct_errors:
             for e in struct_errors:
                 print(f"FAIL: preset '{preset}': {e}")
@@ -399,7 +356,7 @@ def cmd_stamp(apply: bool, preset: str) -> int:
         for e in errors:
             print(f"FAIL: {e}")
         return 1
-    struct_errors = validate_structure(m)
+    struct_errors = validate_map_structure(m)
     if struct_errors:
         for e in struct_errors:
             print(f"FAIL: {e}")
@@ -453,7 +410,7 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path
             print(f"FAIL: {e}")
         return 1
 
-    all_errors = list(validate_structure(m, agents_dir))
+    all_errors = list(validate_map_structure(m, agents_dir))
     if do_families:
         all_errors += check_families(m)
     if do_tiers:

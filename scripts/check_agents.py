@@ -747,9 +747,116 @@ def cmd_validate_all(min_agents) -> int:
 
 # --------------------------------------------------------------------------
 # --map
+#
+# Decomposed per D-B.2. cmd_map's old body folded three orthogonal checks
+# together — map structure, canonical-map STAMP drift, and mozart's allowlist.
+# The stamp cross-check was UNCONDITIONAL, which made the function unsafe to
+# reuse: apply_models.py's preset loop (check.yml:119-123) validates five
+# presets against one on-disk roster, and a stamp matches at most ONE preset,
+# so folding stamp drift into a shared validator turns every other preset red
+# by construction with no possible remedy. The stamp check is therefore GONE
+# from this file entirely (Y5): apply_models.py --check remains the sole
+# canonical-map stamp gate (check.yml:110, a standalone step), so no coverage
+# is lost. What remains here — validate_map_structure() and
+# check_mozart_allowlist() — is stamp-free and safe to share.
 # --------------------------------------------------------------------------
 
-def cmd_map(path_str: str, min_agents=None) -> int:
+def rel_or_abs(p: Path) -> str:
+    """Display a path relative to REPO_ROOT when it's under the source
+    checkout; absolute otherwise. An installed (out-of-tree) directory reached
+    via --agents-dir makes Path.relative_to(REPO_ROOT) raise ValueError, which
+    this guards against (bob H2). Lives here so both scripts share one
+    implementation over the one-directional import edge apply_models.py -> this
+    module."""
+    return str(p.relative_to(REPO_ROOT)) if p.is_relative_to(REPO_ROOT) else str(p)
+
+
+def validate_map_structure(m: dict, agents_dir: Path = None, min_agents=None) -> list:
+    """Shared, unconditional structural validator for a parsed model map.
+
+    Called by BOTH check_agents.py --map and apply_models.py's map-reading
+    commands. Returns a list of failure strings (empty == pass); NEVER raises on
+    a malformed map — malformation is itself a returned failure so a caller can
+    print it and move on. All structural failures are collected then returned in
+    a stable order (declaration order for role/agent walks, sorted for the set
+    differences) so CI diffs are deterministic. Performs NO stamp comparison —
+    that is exactly what makes it safe to call from the preset loop (D-B.2).
+
+    Covers: the map's own shape ('roles'/'agents' objects, every role carries a
+    non-empty 'model' scalar), the two-directional role<->agent coverage
+    traversal (orphan roles, undefined roles, and roster coverage in both
+    directions), and — when min_agents is given — the roster floor. The roster
+    it walks is agents_dir (falling back to .github/agents/), so an installed
+    tree is validated against its own roster, not the source checkout's."""
+    errors = []
+    roles = m.get("roles")
+    agents_block = m.get("agents")
+    if not isinstance(roles, dict):
+        errors.append("map is missing a 'roles' object")
+        roles = {}
+    if not isinstance(agents_block, dict):
+        errors.append("map is missing an 'agents' object")
+        agents_block = {}
+
+    for role_name, role_def in roles.items():
+        model = role_def.get("model") if isinstance(role_def, dict) else None
+        if not isinstance(model, str) or not model.strip():
+            errors.append(f"role '{role_name}' has no non-empty 'model' scalar")
+
+    used_roles = set(agents_block.values())
+    for role in roles:
+        if role not in used_roles:
+            errors.append(f"role '{role}' is defined but assigned to no agent (orphan role)")
+    for agent_name, role in agents_block.items():
+        if role not in roles:
+            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
+
+    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
+    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
+    if min_agents is not None and len(discovered) < min_agents:
+        errors.append(
+            f"roster: {len(discovered)} agent file(s) found under "
+            f"{rel_or_abs(effective_agents_dir)}, --min-agents requires >= {min_agents}"
+        )
+    map_agents = set(agents_block.keys())
+    for missing in sorted(discovered - map_agents):
+        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
+    for extra in sorted(map_agents - discovered):
+        # Name the directory actually searched, not a hardcoded
+        # '.github/agents/' — under --agents-dir that literal would send the
+        # operator looking in the source checkout for a file missing from the
+        # *installed* tree (bob N9).
+        missing_path = effective_agents_dir / f"{extra}.agent.md"
+        errors.append(f"map assigns a role to '{extra}' but no {rel_or_abs(missing_path)} exists")
+
+    return errors
+
+
+def check_mozart_allowlist(agents_dir: Path = None) -> list:
+    """Roster self-consistency: mozart's 'agents:' allowlist must name exactly
+    the specialist files present on disk. It NEVER reads the map — it is a
+    property of the roster alone, which is why D-B.2 keeps it out of
+    validate_map_structure(). Returns a list of failure strings (empty == pass);
+    walks agents_dir (falling back to .github/agents/) so --agents-dir validates
+    the installed roster, not the source checkout's (the old hardcoded AGENTS_DIR
+    silently ignored the flag)."""
+    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
+    errors = []
+    mozart_file = effective_agents_dir / "mozart.agent.md"
+    if not mozart_file.exists():
+        return errors
+    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
+    r = validate_agent_file(mozart_file)
+    mozart_agents = set(r.data.get("agents") or [])
+    specialists = discovered - {"mozart"}
+    for a in sorted(specialists - mozart_agents):
+        errors.append(f"'{a}' is a specialist file but is missing from mozart's agents: allowlist")
+    for a in sorted(mozart_agents - specialists):
+        errors.append(f"mozart's agents: allowlist names '{a}', which is not a specialist file")
+    return errors
+
+
+def cmd_map(path_str: str, min_agents=None, agents_dir: Path = None) -> int:
     p = Path(path_str)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -763,61 +870,8 @@ def cmd_map(path_str: str, min_agents=None) -> int:
         print(f"FAIL: could not parse {p} as JSONC: {e}")
         return 1
 
-    errors = []
-    roles = m.get("roles")
-    agents_block = m.get("agents")
-    if not isinstance(roles, dict):
-        errors.append("map is missing a 'roles' object")
-        roles = {}
-    if not isinstance(agents_block, dict):
-        errors.append("map is missing an 'agents' object")
-        agents_block = {}
-
-    used_roles = set(agents_block.values())
-    for role in roles:
-        if role not in used_roles:
-            errors.append(f"role '{role}' is defined but assigned to no agent (orphan role)")
-    for agent_name, role in agents_block.items():
-        if role not in roles:
-            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
-
-    discovered = {agent_stem(f) for f in discover_agent_files()}
-    if min_agents is not None and len(discovered) < min_agents:
-        errors.append(
-            f"roster: {len(discovered)} agent file(s) found under .github/agents/, "
-            f"--min-agents requires >= {min_agents}"
-        )
-    map_agents = set(agents_block.keys())
-    for missing in sorted(discovered - map_agents):
-        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
-    for extra in sorted(map_agents - discovered):
-        errors.append(f"map assigns a role to '{extra}' but no .github/agents/{extra}.agent.md exists")
-
-    for f in discover_agent_files():
-        stem = agent_stem(f)
-        role = agents_block.get(stem)
-        if role is None or role not in roles:
-            continue
-        r = validate_agent_file(f)
-        role_model = roles[role].get("model") if isinstance(roles[role], dict) else None
-        file_model = r.data.get("model")
-        if role_model is not None and file_model is not None and role_model != file_model:
-            errors.append(
-                f"'{stem}' is stamped model {file_model!r} but its role '{role}' maps to {role_model!r}"
-            )
-
-    mozart_file = AGENTS_DIR / "mozart.agent.md"
-    if mozart_file.exists():
-        r = validate_agent_file(mozart_file)
-        mozart_agents = set(r.data.get("agents") or [])
-        specialists = discovered - {"mozart"}
-        missing_from_allowlist = specialists - mozart_agents
-        extra_in_allowlist = mozart_agents - specialists
-        for a in sorted(missing_from_allowlist):
-            errors.append(f"'{a}' is a specialist file but is missing from mozart's agents: allowlist")
-        for a in sorted(extra_in_allowlist):
-            errors.append(f"mozart's agents: allowlist names '{a}', which is not a specialist file")
-
+    errors = validate_map_structure(m, agents_dir, min_agents)
+    errors += check_mozart_allowlist(agents_dir)
     for e in errors:
         print(f"FAIL: {e}")
     return 1 if errors else 0

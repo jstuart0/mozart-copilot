@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -70,7 +71,27 @@ AGENTS_DIR = REPO_ROOT / ".github" / "agents"
 UPSTREAM_CARVE_START_LINE = 7
 UPSTREAM_CARVE_END_LINE = 2400
 UPSTREAM_CARVE_EXPECTED_CHARS = 241189
-UPSTREAM_MOZART_MD = Path("/Users/jaystuart/dev/mozart-orchestration/agents/mozart.md")
+# The upstream mozart.md live re-derivation (below, in cmd_check_carve) reads
+# this when a source checkout is reachable. The path is no longer hardcoded
+# to one person's layout (C1): it is resolved per invocation from an explicit
+# --upstream-mozart-md flag or the shared $MOZART_UPSTREAM_CHECKOUT env var,
+# defaulting to None = skip. resolve_upstream_mozart_md() below is the single
+# resolver.
+UPSTREAM_MOZART_MD_SUBPATH = "agents/mozart.md"
+
+
+def resolve_upstream_mozart_md(explicit: str = None):
+    """Resolve the optional upstream agents/mozart.md for the carve's live
+    re-derivation cross-check. Order: explicit --upstream-mozart-md flag →
+    $MOZART_UPSTREAM_CHECKOUT joined with agents/mozart.md → None (skip).
+    None reaches cmd_check_carve()'s existing .exists()-guarded skip branch
+    with no new code path (D-A option B)."""
+    if explicit:
+        return Path(explicit)
+    checkout = os.environ.get("MOZART_UPSTREAM_CHECKOUT")
+    if checkout:
+        return Path(checkout) / UPSTREAM_MOZART_MD_SUBPATH
+    return None
 BUNDLE_PREFIX = ".github/mozart/"
 TOOLSETS_PATH = REPO_ROOT / "config" / "toolsets.jsonc"
 RUNTIME_READS_TSV = REPO_ROOT / "tests" / "runtime-reads.tsv"
@@ -973,7 +994,7 @@ def cmd_check_install(dir_str: str, layout: str = "repo") -> int:
 # column must equal <N>.
 # --------------------------------------------------------------------------
 
-def cmd_check_carve(tsv_path_str: str) -> int:
+def cmd_check_carve(tsv_path_str: str, upstream_mozart_md=None) -> int:
     p = Path(tsv_path_str)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -1046,25 +1067,27 @@ def cmd_check_carve(tsv_path_str: str) -> int:
             f"{UPSTREAM_CARVE_EXPECTED_CHARS}"
         )
 
-    # When the upstream source is present on disk, independently re-derive
+    # When the upstream source checkout is reachable, independently re-derive
     # its line count and character count (same convention: lines
     # UPSTREAM_CARVE_START_LINE-UPSTREAM_CARVE_END_LINE, each joined by '\n'
     # plus a trailing '\n', matching `sed -n '7,2400p' | wc -m`) and
     # cross-check that live measurement against the hardcoded constants too
     # — if upstream itself has drifted, this port's own carve assumption is
     # stale, and that should surface here rather than only in a wrong TSV.
-    if UPSTREAM_MOZART_MD.exists():
-        upstream_lines = UPSTREAM_MOZART_MD.read_text(encoding="utf-8").splitlines()
+    # upstream_mozart_md is the resolve_upstream_mozart_md() result: an
+    # explicit path, a $MOZART_UPSTREAM_CHECKOUT-derived path, or None (skip).
+    if upstream_mozart_md is not None and upstream_mozart_md.exists():
+        upstream_lines = upstream_mozart_md.read_text(encoding="utf-8").splitlines()
         if len(upstream_lines) != UPSTREAM_CARVE_END_LINE:
             errors.append(
-                f"{UPSTREAM_MOZART_MD} has {len(upstream_lines)} lines, not the hardcoded "
+                f"{upstream_mozart_md} has {len(upstream_lines)} lines, not the hardcoded "
                 f"{UPSTREAM_CARVE_END_LINE}"
             )
         else:
             measured = "\n".join(upstream_lines[UPSTREAM_CARVE_START_LINE - 1:UPSTREAM_CARVE_END_LINE]) + "\n"
             if len(measured) != UPSTREAM_CARVE_EXPECTED_CHARS:
                 errors.append(
-                    f"{UPSTREAM_MOZART_MD} lines {UPSTREAM_CARVE_START_LINE}-{UPSTREAM_CARVE_END_LINE} "
+                    f"{upstream_mozart_md} lines {UPSTREAM_CARVE_START_LINE}-{UPSTREAM_CARVE_END_LINE} "
                     f"measure {len(measured)} chars, not the hardcoded {UPSTREAM_CARVE_EXPECTED_CHARS}"
                 )
 
@@ -1165,6 +1188,13 @@ def build_parser():
              "'user' (agents/ + mozart/, the Copilot CLI user-scope shape)",
     )
     p.add_argument("--check-carve", metavar="TSV_PATH", help="validate a coverage-map.tsv is total")
+    p.add_argument(
+        "--upstream-mozart-md",
+        metavar="PATH",
+        help="path to the upstream agents/mozart.md for the carve's live re-derivation cross-check "
+             "(meaningful only with --check-carve). Defaults to $MOZART_UPSTREAM_CHECKOUT/agents/mozart.md, "
+             "or is skipped when neither is set.",
+    )
     p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
     return p
 
@@ -1190,7 +1220,7 @@ def main(argv=None) -> int:
     if args.check_install:
         return cmd_check_install(args.check_install, args.layout)
     if args.check_carve:
-        return cmd_check_carve(args.check_carve)
+        return cmd_check_carve(args.check_carve, resolve_upstream_mozart_md(args.upstream_mozart_md))
     if args.check_doc_table:
         return cmd_check_doc_table()
     return cmd_validate_all(args.min_agents)

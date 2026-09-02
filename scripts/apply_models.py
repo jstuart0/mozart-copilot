@@ -31,6 +31,7 @@ sebastian is exempt by name — net-new, no upstream row).
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -50,10 +51,28 @@ from check_agents import (  # noqa: E402
 CANONICAL_MAP = REPO_ROOT / ".github" / "mozart" / "config" / "model-map.jsonc"
 PRESETS_DIR = REPO_ROOT / "config" / "model-maps"
 UPSTREAM_TIERS_TSV = REPO_ROOT / "tests" / "fixtures" / "upstream-tiers.tsv"
-# The r5 DATA cross-check (non-gating) reads this when present; an installed
-# copy of this repo won't have the upstream source checkout, and that's
-# fine — see data_cross_check_readme_vs_frontmatter().
-UPSTREAM_README = Path("/Users/jaystuart/dev/mozart-orchestration/agents/README.md")
+# The r5 DATA cross-check (non-gating) reads the upstream agents/README.md
+# when a source checkout is reachable; an installed copy of this repo won't
+# have that checkout, and that's fine — see
+# data_cross_check_readme_vs_frontmatter(). The path is no longer hardcoded
+# to one person's layout (C1): it is resolved per invocation from an
+# explicit flag or the shared $MOZART_UPSTREAM_CHECKOUT env var, defaulting
+# to None = skip. resolve_upstream_readme() below is the single resolver.
+UPSTREAM_README_SUBPATH = "agents/README.md"
+
+
+def resolve_upstream_readme(explicit: str = None):
+    """Resolve the optional upstream agents/README.md for the non-gating DATA
+    cross-check. Order: explicit --upstream-readme flag →
+    $MOZART_UPSTREAM_CHECKOUT joined with agents/README.md → None (skip).
+    None reaches data_cross_check_readme_vs_frontmatter()'s existing
+    skip branch with no new code path (D-A option B)."""
+    if explicit:
+        return Path(explicit)
+    checkout = os.environ.get("MOZART_UPSTREAM_CHECKOUT")
+    if checkout:
+        return Path(checkout) / UPSTREAM_README_SUBPATH
+    return None
 
 TIER_RANK = {"haiku": 0, "sonnet": 1, "opus": 2}
 ROLE_TIER = {
@@ -178,23 +197,30 @@ def load_upstream_tiers() -> dict:
     return tiers
 
 
-def data_cross_check_readme_vs_frontmatter() -> None:
+def data_cross_check_readme_vs_frontmatter(upstream_readme=None) -> None:
     """r5's non-gating half. tests/fixtures/upstream-tiers.tsv is
     transcribed from persona frontmatter, deliberately not from
     agents/README.md's Model column, because that column is stale for
     bob/ruby/valerie. This prints one DATA line per disagreement between
     the two sources so the staleness stays visible instead of silently
     reappearing the next time someone regenerates the TSV from the README.
-    Never returns errors and never affects the caller's exit code. When the
-    upstream source checkout isn't present (e.g. an installed copy of this
-    bundle, which never ships tests/), prints one DATA line saying the
-    cross-check was skipped rather than doing nothing silently."""
-    if not UPSTREAM_README.exists():
-        print(f"DATA: cross-check skipped — {UPSTREAM_README} not present (expected outside the source checkout)")
+    Never returns errors and never affects the caller's exit code. When no
+    upstream source checkout is configured or reachable (e.g. an installed
+    copy of this bundle, which never ships tests/), prints one DATA line
+    saying the cross-check was skipped rather than doing nothing silently.
+    `upstream_readme` is the resolve_upstream_readme() result: an explicit
+    path, a $MOZART_UPSTREAM_CHECKOUT-derived path, or None."""
+    if upstream_readme is None:
+        print("DATA: cross-check skipped — no upstream source checkout configured "
+              "(expected outside the source checkout; set --upstream-readme or "
+              "$MOZART_UPSTREAM_CHECKOUT to enable)")
+        return
+    if not upstream_readme.exists():
+        print(f"DATA: cross-check skipped — {upstream_readme} not present (expected outside the source checkout)")
         return
 
     readme_tiers = {}
-    for line in UPSTREAM_README.read_text(encoding="utf-8").splitlines():
+    for line in upstream_readme.read_text(encoding="utf-8").splitlines():
         m = re.match(r"\|\s*(\w[\w-]*)\s*\|.*\|\s*(opus|sonnet|haiku)\s*\|", line)
         if m:
             readme_tiers[m.group(1)] = m.group(2)
@@ -419,7 +445,7 @@ def cmd_stamp(apply: bool, preset: str) -> int:
 # --validate-map / --check-families / --check-tiers dispatch
 # --------------------------------------------------------------------------
 
-def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path = None) -> int:
+def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path = None, upstream_readme=None) -> int:
     path = resolve_map_path(path_str)
     m, errors = load_map(path)
     if errors:
@@ -433,7 +459,7 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path
     if do_tiers:
         all_errors += check_tiers(m)
         # Non-gating: never contributes to all_errors / the exit code.
-        data_cross_check_readme_vs_frontmatter()
+        data_cross_check_readme_vs_frontmatter(upstream_readme)
 
     for e in all_errors:
         print(f"FAIL: {e}")
@@ -455,6 +481,13 @@ def build_parser():
     p.add_argument("--check-families", action="store_true", help="assert roles.validation.family != roles.builders.family (D8)")
     p.add_argument("--check-tiers", action="store_true", help="assert no agent's role sits below its upstream tier")
     p.add_argument("--explain", action="store_true", help="print each role's model/family/fallback")
+    p.add_argument(
+        "--upstream-readme",
+        metavar="PATH",
+        help="path to the upstream agents/README.md for the non-gating DATA cross-check "
+             "(meaningful only with --check-tiers). Defaults to $MOZART_UPSTREAM_CHECKOUT/agents/README.md, "
+             "or is skipped when neither is set.",
+    )
     p.add_argument(
         "--agents-dir",
         metavar="DIR",
@@ -486,6 +519,7 @@ def main(argv=None) -> int:
     # means .github/agents/.
     active_map_path = args.validate_map
     active_agents_dir = resolve_agents_dir(args.agents_dir)
+    active_upstream_readme = resolve_upstream_readme(args.upstream_readme)
     ran_a_check = False
     exit_code = 0
 
@@ -496,7 +530,7 @@ def main(argv=None) -> int:
         ran_a_check = True
 
     if args.validate_map or args.check_families or args.check_tiers:
-        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers, active_agents_dir)
+        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers, active_agents_dir, active_upstream_readme)
         if rc != 0:
             exit_code = 1
         ran_a_check = True

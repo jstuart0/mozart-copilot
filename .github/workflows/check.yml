@@ -16,9 +16,34 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Phase P4: pin the runner to a dated image, never the mutable
+    # ubuntu-latest — a silent image bump must not be able to change what the
+    # gate tests. The interpreter is pinned via the matrix below: '3.9' is the
+    # declared floor (and must keep being exercised) and '3.11' the upper rail.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.11']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Phase P4: pin the interpreter by full commit SHA (never a mutable tag),
+      # matrix-driven so both the 3.9 floor and 3.11 are exercised.
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Phase P4 (M9): the frontmatter validator's PyYAML cross-check silently
+      # skips when PyYAML is not importable (see check_agents.py's
+      # yaml_crosscheck_mode_note). Install it at a pinned version, then prove
+      # by POSITIVE CONTENT — not by exit code, which stays 0 whether or not
+      # the cross-check ran — that the cross-check actually executed. Without
+      # this assertion, CI would be green while the 690c789 hotfix is inert.
+      - name: PyYAML present so the frontmatter cross-check runs (Phase P4 — M9)
+        run: |
+          python3 -m pip install --disable-pip-version-check 'pyyaml==6.0.2'
+          python3 scripts/check_agents.py --self-test --forms 2>&1 | grep -q 'frontmatter cross-check'
 
       - name: Parse — check_agents.py and apply_models.py compile
         run: python3 -m py_compile scripts/check_agents.py scripts/apply_models.py

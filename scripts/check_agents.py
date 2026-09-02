@@ -440,8 +440,8 @@ def yaml_crosscheck_mode_note() -> str:
     hand-rolled parser alone or to both, never assumed (live-parser
     incident, 2026-09-01)."""
     if HAVE_PYYAML:
-        return "frontmatter validation mode: hand-rolled parser + PyYAML cross-check (both ran)"
-    return "frontmatter validation mode: hand-rolled parser only (PyYAML not importable — cross-check skipped)"
+        return "frontmatter cross-check ran: hand-rolled parser + PyYAML (both parsers)"
+    return "frontmatter cross-check skipped: PyYAML not importable — hand-rolled parser only"
 
 
 def agent_stem(path: Path) -> str:

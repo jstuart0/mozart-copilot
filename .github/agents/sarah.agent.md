@@ -94,7 +94,7 @@ When invoked with a research topic:
 
 ## Brief format
 
-Write the brief as a return value to mozart, OR (if the topic is large enough or will be referenced repeatedly) save it to the **absolute** research path in mozart's brief — conventionally `<canonical-checkout>/.mozart/research/<slug>.md`. Mozart will tell you which. Use the absolute path as given, not a relative `.mozart/...`: your cwd may be the campaign's git worktree, where a relative write lands where nothing will find it.
+Return the brief inline as your response to mozart. If the topic is large enough or will be referenced repeatedly, say so in your return — mozart persists it to the **absolute** research path in its own brief, conventionally `<canonical-checkout>/.mozart/research/<slug>.md`. You hold neither `edit` nor `execute`, so you never touch that path yourself; hand back the brief text and let mozart decide where it lands.
 
 ```
 # Research: <topic>

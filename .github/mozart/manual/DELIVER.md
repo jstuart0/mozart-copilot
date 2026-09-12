@@ -77,7 +77,7 @@ Skip in TINY. In STANDARD/HEAVY, run when:
 - **codebase-pattern-finder** — when in-repo examples matter
 - **web-search-researcher** — when an external sub-question deserves its own thread
 
-Sarah herself parallelizes her internal tool calls (codebase scan + web search in one batch). The brief is returned inline for small jobs, or written to `.mozart/research/<slug>.md` for substantial ones.
+Sarah herself parallelizes her internal tool calls (codebase scan + web search in one batch). The brief is returned inline for small jobs; mozart persists it to `.mozart/research/<slug>.md` for substantial ones, since sarah holds neither `edit` nor `execute`.
 
 ### 3. Plan (harry)
 - Brief harry: task, research brief (if any), the **absolute** plan path to write to, the worktree path + campaign branch, context
@@ -125,7 +125,7 @@ Dispatch sebastian for an independent cross-model senior-architect read. **Befor
 ### 6. Iterate (harry, if needed)
 
 - **Short-circuit**: if internal reviewers + sebastian are all clean (no Critical/High), proceed directly to implementation. Don't iterate for its own sake.
-- **Otherwise**: **brief the live harry again** (context intact if the harness supports subagent continuation — he still has the plan rationale loaded; if continuation isn't available, re-spawn and brief with the artifacts, per the conductor body's continuation rule) with consolidated findings (cite sebastian's review path explicitly so harry reads it). Harry revises. Re-invoke only the reviewers whose concerns weren't addressed — brief the live reviewer again if it's the same one re-checking its own finding, spawn fresh only when you want an unanchored second look; re-run sebastian only if revisions are substantive (writes `<slug>.counterpoint-r1b-plan.md`, etc.).
+- **Otherwise**: **brief the live harry again** (context intact if the harness supports subagent continuation — he still has the plan rationale loaded; if continuation isn't available, re-spawn and brief with the artifacts, per the conductor body's continuation rule) with consolidated findings (cite sebastian's review path explicitly so harry reads it). Harry revises. Re-invoke only the reviewers whose concerns weren't addressed — brief the live reviewer again if it's the same one re-checking its own finding, spawn fresh only when you want an unanchored second look; re-run sebastian only if revisions are substantive (mozart writes `<slug>.counterpoint-r1b-plan.md`, etc.).
 - Cap: 3 rounds. **Increment the state file's iteration counter in the same step that launches the round** — a counter you plan to update later is how a written "0/3" cap gets silently exceeded (observed: six reconciliation rounds ran against an un-incremented `0/3`, ai-meeting June 2026). At the cap, present a forced decision to the user — ship with named residual risk, or stop — don't improvise an ad-hoc extension ("ship after r2g regardless" is not a convergence policy).
 - Before continuing, confirm the plan has explicit phases jackson can implement one at a time.
 

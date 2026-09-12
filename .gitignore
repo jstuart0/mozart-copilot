@@ -6,3 +6,11 @@
 .idea/
 __pycache__/
 *.pyc
+
+# check.yml's install-bundle/uninstall regression steps redirect into these
+# relative paths (repo root) rather than a temp dir; harmless on an ephemeral
+# runner but a maintainer running the battery locally leaves them untracked.
+/out.txt
+/out2.txt
+/out3.txt
+/extracted.sh

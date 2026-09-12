@@ -4,7 +4,7 @@
 # (D1/D9/D10/D11).
 #
 # Usage:
-#   install-bundle.sh --target <dir> [--apply] [--force]
+#   install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
 #   install-bundle.sh --user-scope [--home <dir>] [--copilot-home <dir>]
 #                      [--bin-dir <dir>] [--no-bundle] [--no-wrapper]
 #                      [--apply] [--force] [--force-clobber]
@@ -75,9 +75,10 @@
 #                      only question --force answers: "may this bundle move
 #                      backwards?"
 #
-# --force-clobber      Only valid with --user-scope. Required to overwrite a
-#                      pre-existing file this installer did not write and
-#                      that is not byte-identical to what would be installed
+# --force-clobber      Valid with --target or --user-scope. Required to
+#                      overwrite a pre-existing file this installer did not
+#                      write and that is not byte-identical to what would be
+#                      installed
 #                      — the CLI wrapper binary or an agent definition file
 #                      (D11). Ownership is proven by byte-identity alone: an
 #                      identical file makes the write a no-op, so nothing can
@@ -105,6 +106,68 @@ SOURCE_VERSION_FILE="$REPO_ROOT/.github/mozart/VERSION"
 # isolation. Needed by is_absurd_root below (codex r2 #2).
 REAL_HOME_AMBIENT="${HOME:-}"
 
+# --------------------------------------------------------------------------
+# Secure temp-file placement (sebastian HIGH-5). Every "atomic, symlink-safe"
+# state write below (manifest, trust roots, wrapper allowlist, and each copied
+# leaf) MUST land through a temp file whose name an attacker cannot predict —
+# a predictable "$dest.tmp.$$" can be pre-created as a symlink, and both
+# `cp … "$tmp"` and `printf > "$tmp"` FOLLOW a pre-existing symlink at the temp
+# pathname (only the final `mv -f` refuses to). mktemp with an X-suffixed
+# template creates the file O_EXCL|O_CREAT (0600) — never through a link — on
+# both BSD/macOS and GNU. A trap removes any temp left behind by a refusal.
+# --------------------------------------------------------------------------
+MOZART_TEMPS=()
+_cleanup_temps() {
+  local t
+  for t in ${MOZART_TEMPS[@]+"${MOZART_TEMPS[@]}"}; do
+    [ -n "$t" ] && rm -f "$t"
+  done
+}
+trap _cleanup_temps EXIT
+
+# make_temp_in DIR — create an exclusive, unpredictably-named temp file inside
+# DIR (same filesystem as the final destination, so the following `mv -f` is
+# atomic), verify it is a real regular file, register it for trap cleanup, and
+# return its path in MOZART_LAST_TEMP. The template's X-run is the LAST path
+# component — required by BSD and GNU mktemp alike. Fails closed (exit 1) if
+# mktemp fails or the result is anything but a regular file. Portable: no
+# `mktemp -p`/`--tmpdir` (flag skew).
+#
+# Returns via a global (MOZART_LAST_TEMP), NOT via stdout+command-substitution,
+# on purpose: `$(make_temp_in …)` would run this in a SUBSHELL, so the
+# MOZART_TEMPS registration below would never reach the parent's EXIT trap and
+# a temp left behind by a mid-write failure would leak. Callers run it in the
+# current shell, then read MOZART_LAST_TEMP.
+MOZART_LAST_TEMP=""
+make_temp_in() {
+  local dir="$1" t
+  t="$(mktemp "$dir/.mozart-tmp.XXXXXXXXXX")" || {
+    echo "REFUSED: could not create a secure temp file in $dir — refusing to fall back to a predictable, symlink-followable name." >&2
+    exit 1
+  }
+  if [ -L "$t" ] || [ ! -f "$t" ]; then
+    echo "REFUSED: temp file $t is not a regular file — refusing to write through it." >&2
+    rm -f "$t"
+    exit 1
+  fi
+  MOZART_TEMPS+=("$t")
+  MOZART_LAST_TEMP="$t"
+}
+
+# has_control_char S — true (0) iff S contains any control character (newline,
+# carriage return, tab, or any [:cntrl:]). Fail-closed guard shared by every
+# line-based state file: a control char in a recorded path/root forges the line
+# format and becomes an arbitrary-delete (manifest, P15) or arbitrary-trust-
+# injection (roots/wrapper, P16) primitive. Newline and CR are tested
+# explicitly (a command substitution would swallow a trailing newline) before
+# the general control-class scan.
+has_control_char() {
+  local s="$1" nl=$'\n'
+  if [ "$s" != "${s//$nl/}" ] || [ "$s" != "${s//$'\r'/}" ]; then return 0; fi
+  if [ -n "$(printf '%s' "$s" | LC_ALL=C tr -cd '[:cntrl:]')" ]; then return 0; fi
+  return 1
+}
+
 # canon_path P — physically resolve P for blocklist comparison. Walks up to
 # the longest existing ancestor when P itself doesn't exist yet (the normal
 # case: --copilot-home/--bin-dir name a not-yet-created directory), resolves
@@ -124,6 +187,52 @@ canon_path() {
   fi
   resolved="$(cd "$cur" 2>/dev/null && pwd -P)" || { printf '%s\n' "$p"; return; }
   printf '%s%s\n' "$resolved" "$rest"
+}
+
+# canonicalize_root LABEL PATH — physically resolve an install ROOT to an
+# absolute path and print it, or refuse (usage error, exit 2) if it cannot be
+# made absolute (sebastian HIGH-1). A raw relative --home/--copilot-home/
+# --bin-dir would otherwise flow verbatim into the ownership manifest, which
+# PROMISES absolute paths; a recorded 'tools/mozart' is later resolved by the
+# uninstall against ITS OWN cwd and can delete an unrelated byte-identical
+# file. Called AFTER the container symlink refusal (so resolving symlinked
+# ancestors here cannot mask a symlinked container the P13 check must still
+# see), and BEFORE the first write.
+canonicalize_root() {
+  local label="$1" p="$2" c
+  c="$(canon_path "$p")" || c=""
+  case "$c" in
+    /*) ;;
+    *)
+      echo "usage error: refusing to install — the $label '$p' could not be resolved to an absolute path (got '$c'). Pass an absolute path." >&2
+      exit 2 ;;
+  esac
+  printf '%s\n' "$c"
+}
+
+# assert_manifest_path PATH — refuse (exit 2) unless PATH is absolute,
+# normalized (no '..' or '.' component, no empty component), and free of
+# control characters (sebastian HIGH-1: "assert every manifest path is absolute
+# and normalized before the manifest is committed"). Called by write_manifest
+# at commit time AND by the user-scope preflight before any write.
+assert_manifest_path() {
+  local p="$1"
+  if has_control_char "$p"; then
+    echo "REFUSED: refusing to record a destination path containing a control character (newline, carriage return, tab, ...) in the ownership manifest — it would forge the line-based format and become an arbitrary-delete primitive at uninstall: $p" >&2
+    exit 2
+  fi
+  case "$p" in
+    /*) ;;
+    *) echo "REFUSED: ownership-manifest path is not absolute ('$p') — the manifest promises absolute paths; a relative one is resolved against the uninstall's own cwd and can delete an unrelated file." >&2; exit 2;;
+  esac
+  case "$p" in
+    *//*) echo "REFUSED: ownership-manifest path has an empty component ('$p') — refusing to record a non-normalized path." >&2; exit 2;;
+    */) echo "REFUSED: ownership-manifest path ends with a slash ('$p') — refusing to record a non-file path." >&2; exit 2;;
+  esac
+  case "$p" in
+    */../*|*/..) echo "REFUSED: ownership-manifest path contains a '..' component ('$p') — refusing to record a non-normalized path." >&2; exit 2;;
+    */./*|*/.) echo "REFUSED: ownership-manifest path contains a '.' component ('$p') — refusing to record a non-normalized path." >&2; exit 2;;
+  esac
 }
 
 # Absurd install roots (xander L2): never let --copilot-home or --bin-dir
@@ -148,9 +257,393 @@ is_absurd_root() {
   return 1
 }
 
+# refuse_if_symlinked_containers LABEL PATH [LABEL PATH ...] — P13. Refuse,
+# before any byte is written, when a destination *container directory* is
+# itself a symlink, on both the --target and --user-scope branches. Every
+# symlinked container in the argument list is reported, so a single run names
+# them all.
+#
+# Distinct from the per-file [ -L ] collision matrix (below, in the
+# user-scope branch, and in the --target branch as of P14): that matrix
+# guards the leaf *files* being written and passes *vacuously* when the
+# container is the link, because every file then lands inside the link's
+# target and no per-file test ever fires. A symlinked container silently
+# redirects the whole install through the link — into /etc, a sibling repo,
+# anywhere it points. is_absurd_root does not catch this either: it compares
+# canonicalized *strings* against a fixed blocklist, so a <copilot-home> that
+# is a symlink to /etc/foo passes it and mkdir -p writes straight through.
+#
+# Fail closed and portable: the test is a plain POSIX [ -L ] type check with
+# no path resolution, so BSD/macOS and GNU agree (deliberately NOT readlink
+# -f / realpath, whose flags differ across the two). A symlink — including a
+# dangling one — is refused; nothing is followed, so an inconclusive resolve
+# can never be mistaken for "not a link".
+#
+# ACCEPTED RESIDUAL (xander P13-P16 gate, Low — deliberate, NOT fixed): a
+# symlinked *ancestor* ABOVE the operator-supplied root is not resolved here.
+# Catching it would require an unconditional `readlink -f`/`realpath` on every
+# ancestor, whose flags diverge across BSD and GNU — the exact portability trap
+# this whole script avoids. The [ -L ] container and leaf checks cover every
+# path this installer itself creates or writes; an attacker who already controls
+# a parent directory of the operator's chosen root has broader access than this
+# gate could meaningfully arbitrate. Documented as a choice, not an oversight.
+refuse_if_symlinked_containers() {
+  local blocks=()
+  local label path
+  while [ $# -gt 0 ]; do
+    label="$1"; path="$2"; shift 2
+    if [ -L "$path" ]; then
+      blocks+=("$label: $path")
+    fi
+  done
+  if [ "${#blocks[@]}" -gt 0 ]; then
+    echo "REFUSED: a destination container directory is a symlink; refusing to write through it (P13) — this would redirect the install into the link's target. Remove it and re-run if you intend to replace what it points to:" >&2
+    local b
+    for b in "${blocks[@]}"; do echo "  $b" >&2; done
+    exit 1
+  fi
+}
+
+# --------------------------------------------------------------------------
+# Ownership manifest (D-I, P15). A persistent record of every file this
+# installer has ever written under the user's home, so the documented
+# uninstall (P20) can delete exactly what we own — and refuse anything else.
+# It lives OUTSIDE <copilot-home>/mozart/ (which `cp -R` overwrites on every
+# reinstall) at <copilot-home>/mozart-manifest.txt, mode 0600.
+#
+# Line format: "<sha256>  <absolute-path>" (two spaces). The recorded sha256
+# is what makes the uninstall safe: a file whose current hash no longer
+# matches has been replaced by the user or another project and MUST be left
+# alone. The manifest never shrinks (union-with-dedup) — a path an earlier
+# install wrote is preserved even when a later reinstall with different flags
+# (--no-wrapper, a changed --bin-dir) would not write it again. An orphaned
+# entry is a *skipped* delete at uninstall, never a wrong one.
+#
+# Portability: sha256 via `sha256sum` (GNU) or `shasum -a 256` (BSD/macOS);
+# first whitespace-delimited field via `awk`. No associative arrays (macOS
+# ships bash 3.2) — dedup is done with a linear membership test.
+# --------------------------------------------------------------------------
+
+sha256_of() {
+  # Hex sha256 of file "$1", or empty on failure (fail closed).
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  else
+    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+_path_in_list() {
+  local needle="$1"; shift
+  local x
+  for x in "$@"; do
+    [ "$x" = "$needle" ] && return 0
+  done
+  return 1
+}
+
+# validate_manifest_target MANIFEST — the manifest-FILE checks that must fire
+# before any write (sebastian HIGH-4 preflight): refuse a symlinked manifest
+# leaf (xander HIGH — an attacker who pre-creates it as a symlink gets
+# arbitrary truncate/append AND poisons the uninstall's delete authority), and
+# refuse an existing-but-unreadable manifest (rewriting it would orphan every
+# prior entry). Idempotent — safe to call in preflight and again in
+# write_manifest.
+validate_manifest_target() {
+  local manifest="$1"
+  if [ -L "$manifest" ]; then
+    echo "REFUSED: ownership manifest path $manifest is a symlink; refusing to write through it — this would truncate/append to the link's target and forge the uninstall's delete authority. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a DIRECTORY (or other non-regular node) at the manifest path is not
+  # a symlink, so the check above misses it; `mv -f "$tmp" "$manifest"` would
+  # then move the temp file INSIDE the directory and report success WITHOUT
+  # creating an authoritative manifest — the uninstall would find nothing to
+  # act on. Reject the wrong node type before any write.
+  if [ -e "$manifest" ] && [ ! -L "$manifest" ] && [ ! -f "$manifest" ]; then
+    echo "REFUSED: ownership manifest path $manifest exists but is not a regular file (a directory or special file); refusing to write — an 'mv' into it would hide the temp file inside it and leave no authoritative manifest. Remove it and re-run." >&2
+    exit 1
+  fi
+  if [ -f "$manifest" ] && [ ! -r "$manifest" ]; then
+    echo "REFUSED: existing ownership manifest $manifest is unreadable — refusing to rewrite it, which would orphan the paths a prior install recorded." >&2
+    exit 2
+  fi
+}
+
+# write_manifest MANIFEST_PATH DEST_PATH... — union the paths written this run
+# into any prior manifest, refreshing the checksum for every path written this
+# run and preserving all prior entries whose path is not written this run.
+# Refuses (exit 2) any path that is not absolute+normalized or that contains a
+# control character BEFORE touching the manifest — the format is line-based and
+# a forgeable or relative-path manifest is an arbitrary-delete primitive at
+# uninstall (sebastian HIGH-1/HIGH-3). The file is (re)written 0600 every time;
+# its content is never even briefly world-readable (umask 077 around the write).
+write_manifest() {
+  local manifest="$1"; shift
+  local nl=$'\n'
+  local p
+  # 1. Absolute+normalized+control-char assertion — fail closed before any read
+  #    or write (sebastian HIGH-1: assert every manifest path is absolute and
+  #    normalized before the manifest is committed).
+  for p in "$@"; do
+    assert_manifest_path "$p"
+  done
+  # 1b/2. Manifest-file checks (symlink leaf refusal, unreadable refusal).
+  validate_manifest_target "$manifest"
+  # 3. Preserve prior entries whose path is NOT written this run (union).
+  local merged="" line ppath
+  if [ -f "$manifest" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && continue
+      ppath="${line#*  }"
+      if ! _path_in_list "$ppath" "$@"; then
+        merged+="$line$nl"
+      fi
+    done < "$manifest"
+  fi
+  # 4. Fresh, checksummed entries for every path written this run.
+  local sum
+  for p in "$@"; do
+    # `|| sum=""` (sebastian MED-A): sha256_of runs a pipeline under
+    # `set -euo pipefail`; a failing hash utility makes the pipeline nonzero,
+    # and the bare assignment would EXIT here — AFTER artifacts were copied —
+    # before the explicit "could not compute sha256" refusal below can fire.
+    sum="$(sha256_of "$p")" || sum=""
+    if [ -z "$sum" ]; then
+      echo "REFUSED: could not compute sha256 for $p — refusing to write an unverifiable ownership-manifest entry." >&2
+      exit 2
+    fi
+    merged+="$sum  $p$nl"
+  done
+  # 5. Write 0600 atomically via an unpredictable, exclusive temp in the same
+  #    dir + mv -f (sebastian HIGH-5): a predictable "$manifest.tmp.$$" can be
+  #    pre-created as a symlink and `printf > "$tmp"` would follow it. mktemp
+  #    creates the temp O_EXCL, never through a link; mv -f then replaces the
+  #    destination name (also never following a symlink at it). umask keeps the
+  #    content from existing world-readable even momentarily.
+  local tmp; make_temp_in "$(dirname "$manifest")"; tmp="$MOZART_LAST_TEMP"
+  local umask_old; umask_old="$(umask)"
+  umask 077
+  printf '%s' "$merged" > "$tmp"
+  umask "$umask_old"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$manifest"
+}
+
+# --------------------------------------------------------------------------
+# Install-time trust roots (D-E / D-H, P16). Records the canonical repo root
+# this install trusts, keyed on USER-SIDE state at
+# <copilot-home>/mozart-trust/roots (dir 0700, file 0600) — deliberately
+# OUTSIDE <copilot-home>/mozart/, which `cp -R` overwrites on every reinstall.
+# The launch wrapper (P17) exempts its provenance gate only for a current repo
+# root whose device:inode identity matches a recorded root; everything else
+# fails closed.
+# --------------------------------------------------------------------------
+
+# dev_ino DIR — canonical identity of a directory as "device:inode", or empty
+# on failure. Fail closed: empty output on EITHER side of a comparison is a
+# NON-match (used by the wrapper, P17). Copied verbatim into scripts/mozart.
+#
+# ORDER IS GNU-FIRST (`stat -c`), BSD-SECOND (`stat -f`) — the REVERSE of the
+# D-H illustrative snippet, and deliberately so (see the P16 report / CHANGELOG):
+# on GNU coreutils `stat -f` is --file-system and '%d'/'%i' are VALID filesystem
+# directives, so `stat -f '%d:%i'` SUCCEEDS with filesystem stats — identical for
+# every path on one volume — and a BSD-first order would fail OPEN on Linux/CI,
+# trusting any two paths on the same filesystem. GNU `stat -c` has no such
+# collision and BSD `stat` rejects `-c` outright, so GNU-first resolves to the
+# real device:inode and fails CLOSED on both platforms.
+dev_ino() { stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null; }
+
+# canonical_root DIR — DIR's physically-resolved absolute path, recorded in
+# human-readable form so a refusal banner can name it. Computed independently
+# of $REPO_ROOT (a bare logical `pwd` captured at line 102): reusing that would
+# record a logical path the physical wrapper lookup can never match under a
+# symlinked ancestor (macOS /tmp -> /private/tmp), refusing every launch (D-H/Y3).
+# Empty on failure.
+canonical_root() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+# physical_root_into VAR DIR — assign canonical_root DIR to the named variable
+# WITHOUT the trailing-newline loss plain command substitution inflicts. Bash
+# strips ALL trailing newlines from `$(...)`, INCLUDING newlines that are part
+# of the directory name — so a target named "/tmp/victim<newline>" would be
+# recorded as "/tmp/victim" and slip past has_control_char, trusting a DIFFERENT
+# repo (sebastian HIGH-3). A printf-X sentinel keeps every byte through the
+# substitution; we then strip exactly the sentinel and pwd's own single
+# terminator, leaving any name-embedded trailing newline intact for
+# has_control_char to reject. Empty on resolution failure. Assigns via a
+# caller-named variable (printf -v, portable to bash 3.2) so the value is never
+# re-captured through another newline-stripping substitution.
+physical_root_into() {
+  local __var="$1" __dir="$2" __out
+  __out="$(canonical_root "$__dir"; printf X)"
+  __out="${__out%X}"        # strip the sentinel (last byte is always X)
+  __out="${__out%$'\n'}"    # strip pwd's single trailing terminator only
+  printf -v "$__var" '%s' "$__out"
+}
+
+# validate_trust_target COPILOT_HOME ROOT_DIR — the trust-state checks that
+# must fire before any write (sebastian HIGH-3/HIGH-4 preflight): refuse a
+# canonical root containing a control character (HIGH-3 — a canonical path with
+# an embedded newline would be written as MULTIPLE trusted roots, injecting
+# trust for another repo and bypassing the provenance gate), and refuse a
+# symlinked mozart-trust dir or roots file (xander HIGH). Idempotent — safe in
+# preflight and again in record_trust_root. A root that cannot be physically
+# resolved (empty canon) is not a refusal here: recording will skip it with a
+# warning.
+validate_trust_target() {
+  local chome="$1" rootdir="$2"
+  local canon; physical_root_into canon "$rootdir"
+  if [ -n "$canon" ] && has_control_char "$canon"; then
+    echo "REFUSED: refusing to record a trusted repo root whose canonical path contains a control character (newline, carriage return, tab, ...) — it would be written as multiple trust roots and inject trust for another repo, bypassing the provenance gate: $canon" >&2
+    exit 1
+  fi
+  local trustdir="$chome/mozart-trust" rootsfile="$chome/mozart-trust/roots"
+  if [ -L "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir is a symlink; refusing to write through it — this would poison the trust roots the launch gate relies on. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a REGULAR FILE (or other non-directory) at the trust-dir path is
+  # not a symlink, so the check above misses it; `mkdir -p` then fails AFTER
+  # agents/bundle were already mutated. Reject the wrong node TYPE up front.
+  if [ -e "$trustdir" ] && [ ! -L "$trustdir" ] && [ ! -d "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir exists but is not a directory (a regular or special file); refusing to install — the trust roots the launch gate relies on cannot be written under it. Remove it and re-run." >&2
+    exit 1
+  fi
+  if [ -L "$rootsfile" ]; then
+    echo "REFUSED: trust roots file $rootsfile is a symlink; refusing to write through it — this would poison the trust roots the launch gate relies on. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a DIRECTORY at the roots-file path would make `mv -f "$tmp" "$rootsfile"`
+  # move the temp file INSIDE it and report success without an authoritative
+  # roots file. Reject the wrong node type before any write.
+  if [ -e "$rootsfile" ] && [ ! -L "$rootsfile" ] && [ ! -f "$rootsfile" ]; then
+    echo "REFUSED: trust roots path $rootsfile exists but is not a regular file (a directory or special file); refusing to write — an 'mv' into it would hide the temp file inside it and leave no authoritative trust roots. Remove it and re-run." >&2
+    exit 1
+  fi
+}
+
+# record_trust_root COPILOT_HOME ROOT_DIR — append the canonical form of
+# ROOT_DIR to the user-side trust roots list, dedup by dev_ino identity (and by
+# exact canonical string, for the rare case dev_ino yields nothing). Appending
+# an already-recorded root is a no-op; ordering is not significant. Dir 0700,
+# file 0600. Caller guarantees COPILOT_HOME exists.
+record_trust_root() {
+  local chome="$1" rootdir="$2"
+  # HIGH-3 / MEDIUM-2: capture the physical root via physical_root_into, which
+  # preserves a name-embedded trailing newline (plain `$(canonical_root ...)`
+  # strips ALL trailing newlines, silently recording a DIFFERENT path) and
+  # yields empty on an unresolvable dir — so we reach the documented warning
+  # below instead of exiting mid-install under `set -e` after artifacts landed.
+  local canon; physical_root_into canon "$rootdir"
+  if [ -z "$canon" ]; then
+    echo "WARNING: could not physically resolve '$rootdir' — not recording it as a trusted root; launches from it will need the MOZART_TRUST_REPO_BUNDLE override." >&2
+    return 0
+  fi
+  # Preflight already ran these (HIGH-3/HIGH-4); re-assert (idempotent) so a
+  # direct caller is never unguarded.
+  validate_trust_target "$chome" "$rootdir"
+  local trustdir="$chome/mozart-trust" rootsfile="$chome/mozart-trust/roots"
+  mkdir -p "$trustdir"
+  chmod 0700 "$trustdir"
+  # `|| id=""` (sebastian MEDIUM-2): dev_ino is nonzero when both stats fail;
+  # the bare assignment would trip `set -e` before the `[ -n "$id" ]` guards
+  # below could treat an empty identity as a non-match.
+  local id; id="$(dev_ino "$canon")" || id=""
+  # Build the merged roots content up front, then write atomically via an
+  # unpredictable, exclusive temp + mv -f (sebastian HIGH-5): a predictable
+  # "$rootsfile.tmp.$$" can be pre-created as a symlink and `printf > "$tmp"`
+  # would follow it. mktemp creates the temp O_EXCL, never through a link.
+  local merged="" existing
+  if [ -f "$rootsfile" ]; then
+    while IFS= read -r existing || [ -n "$existing" ]; do
+      [ -z "$existing" ] && continue
+      # Already recorded (by exact canonical string, or by dev_ino identity for
+      # symlink/case aliases): no-op, re-assert the mode and return.
+      if [ "$existing" = "$canon" ]; then chmod 0600 "$rootsfile"; return 0; fi
+      local eid; eid="$(dev_ino "$existing")" || eid=""
+      if [ -n "$id" ] && [ -n "$eid" ] && [ "$eid" = "$id" ]; then chmod 0600 "$rootsfile"; return 0; fi
+      merged+="$existing"$'\n'
+    done < "$rootsfile"
+  fi
+  merged+="$canon"$'\n'
+  local tmp; make_temp_in "$trustdir"; tmp="$MOZART_LAST_TEMP"
+  local umask_old; umask_old="$(umask)"
+  umask 077
+  printf '%s' "$merged" > "$tmp"
+  umask "$umask_old"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$rootsfile"
+}
+
+# validate_wrapper_target COPILOT_HOME — refuse a symlinked wrapper-location
+# allowlist dir/file before any write (sebastian HIGH-2/HIGH-4). The allowlist
+# is the out-of-band authority the uninstall consults to decide which recorded
+# wrapper path it may delete, so a poisoned one is exactly as dangerous as a
+# poisoned trust roots file.
+validate_wrapper_target() {
+  local chome="$1"
+  local trustdir="$chome/mozart-trust" wfile="$chome/mozart-trust/wrapper-paths"
+  if [ -L "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir is a symlink; refusing to write the wrapper-location allowlist through it. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a regular (or special) file at the trust-dir path is not a symlink;
+  # `mkdir -p` would fail AFTER the wrapper/agents were mutated. Reject the
+  # wrong node type before any write.
+  if [ -e "$trustdir" ] && [ ! -L "$trustdir" ] && [ ! -d "$trustdir" ]; then
+    echo "REFUSED: trust dir $trustdir exists but is not a directory (a regular or special file); refusing to write the wrapper-location allowlist under it. Remove it and re-run." >&2
+    exit 1
+  fi
+  if [ -L "$wfile" ]; then
+    echo "REFUSED: wrapper-location allowlist $wfile is a symlink; refusing to write through it — the uninstall trusts this file to decide which wrapper path it may delete. Remove it and re-run." >&2
+    exit 1
+  fi
+  # HIGH-4: a DIRECTORY at the allowlist path would make `mv -f "$tmp" "$wfile"`
+  # move the temp file INSIDE it and report success without an authoritative
+  # allowlist. Reject the wrong node type before any write.
+  if [ -e "$wfile" ] && [ ! -L "$wfile" ] && [ ! -f "$wfile" ]; then
+    echo "REFUSED: wrapper-location allowlist $wfile exists but is not a regular file (a directory or special file); refusing to write — an 'mv' into it would hide the temp file inside it and leave no authoritative allowlist. Remove it and re-run." >&2
+    exit 1
+  fi
+}
+
+# record_wrapper_location COPILOT_HOME WRAPPER_PATH — record the ABSOLUTE
+# install location of the CLI wrapper in a user-side allowlist at
+# <copilot-home>/mozart-trust/wrapper-paths (dir 0700, file 0600), union-dedup
+# by exact path. The uninstall (P20) deletes a manifest wrapper entry ONLY when
+# it is a member of THIS list — replacing the old, forgeable `*/mozart`
+# basename glob with an out-of-band authority a tampered manifest cannot reach
+# (sebastian HIGH-2). WRAPPER_PATH must be absolute+normalized (it is
+# "$BIN_DIR/mozart", BIN_DIR canonicalized). Caller guarantees COPILOT_HOME
+# exists.
+record_wrapper_location() {
+  local chome="$1" wpath="$2"
+  assert_manifest_path "$wpath"
+  validate_wrapper_target "$chome"
+  local trustdir="$chome/mozart-trust" wfile="$chome/mozart-trust/wrapper-paths"
+  mkdir -p "$trustdir"
+  chmod 0700 "$trustdir"
+  local merged="" existing
+  if [ -f "$wfile" ]; then
+    while IFS= read -r existing || [ -n "$existing" ]; do
+      [ -z "$existing" ] && continue
+      if [ "$existing" = "$wpath" ]; then chmod 0600 "$wfile"; return 0; fi
+      merged+="$existing"$'\n'
+    done < "$wfile"
+  fi
+  merged+="$wpath"$'\n'
+  local tmp; make_temp_in "$trustdir"; tmp="$MOZART_LAST_TEMP"
+  local umask_old; umask_old="$(umask)"
+  umask 077
+  printf '%s' "$merged" > "$tmp"
+  umask "$umask_old"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$wfile"
+}
+
 usage() {
   cat >&2 <<'USAGE'
-usage: install-bundle.sh --target <dir> [--apply] [--force]
+usage: install-bundle.sh --target <dir> [--apply] [--force] [--force-clobber]
        install-bundle.sh --user-scope [--home <dir>] [--copilot-home <dir>]
                           [--bin-dir <dir>] [--no-bundle] [--no-wrapper]
                           [--apply] [--force] [--force-clobber]
@@ -265,8 +758,12 @@ if [ "$NO_WRAPPER" -eq 1 ] && [ "$USER_SCOPE" -eq 0 ]; then
   usage
   exit 2
 fi
-if [ "$FORCE_CLOBBER" -eq 1 ] && [ "$USER_SCOPE" -eq 0 ]; then
-  echo "usage error: --force-clobber is only valid with --user-scope" >&2
+if [ "$FORCE_CLOBBER" -eq 1 ] && [ -z "$TARGET" ] && [ "$USER_SCOPE" -eq 0 ]; then
+  # --force-clobber is valid with either scope (P12 widened it to --target so
+  # the documented reinstall command survives P13/P14's collision detection).
+  # It is meaningless with no scope at all; the required-scope guard below
+  # gives the clearer message, so only guard the truly-nonsensical case here.
+  echo "usage error: --force-clobber requires --target or --user-scope" >&2
   usage
   exit 2
 fi
@@ -282,6 +779,15 @@ fi
 # --------------------------------------------------------------------------
 
 if [ -n "$TARGET" ]; then
+  # xander MEDIUM: mirror the --user-scope is_absurd_root guard. --target also
+  # drives an `rm -rf "$TARGET/.github/mozart"` below, so a target resolving to
+  # a system or home root is the same disproportionate blast radius --user-scope
+  # already refuses. `--target / --apply` used to pass; it now refuses (exit 2).
+  if is_absurd_root "$TARGET"; then
+    echo "usage error: refusing to install into '$TARGET' — this looks like a system or home root, not a repo (this branch drives an rm -rf of <target>/.github/mozart)." >&2
+    exit 2
+  fi
+
   SOURCE_VERSION="$(cat "$SOURCE_VERSION_FILE" 2>/dev/null || echo "unknown")"
   DEST_VERSION_FILE="$TARGET/.github/mozart/VERSION"
 
@@ -293,6 +799,14 @@ if [ -n "$TARGET" ]; then
     fi
   fi
 
+  # P13 — refuse before any write when any of the four --target containers is
+  # a symlink (Y19a adds $TARGET itself and .github/agents to r1's two).
+  refuse_if_symlinked_containers \
+    "target repo root" "$TARGET" \
+    "target .github" "$TARGET/.github" \
+    "target bundle dir (.github/mozart)" "$TARGET/.github/mozart" \
+    "target agents dir (.github/agents)" "$TARGET/.github/agents"
+
   if [ "$APPLY" -eq 0 ]; then
     echo "[dry run] would install into $TARGET:"
     echo "  .github/agents/*.agent.md -> $TARGET/.github/agents/"
@@ -301,13 +815,101 @@ if [ -n "$TARGET" ]; then
     exit 0
   fi
 
-  mkdir -p "$TARGET/.github/agents"
-  cp "$REPO_ROOT"/.github/agents/*.agent.md "$TARGET/.github/agents/"
+  # P14 — collision matrix for the shared <target>/.github/agents/ namespace,
+  # the --target twin of the user-scope matrix below. The collision namespace
+  # is the *target repo's* agents dir, NOT <copilot-home>/agents. The bundle
+  # subtree under .github/mozart/ is this project's own and governed by the
+  # VERSION downgrade guard above; agent files share a name any install could
+  # also write, so each is checked by byte-identity before anything is
+  # written. A dest that is itself a symlink is refused unconditionally (the
+  # container check covers the dir; this covers a leaf file). A non-identical
+  # existing file refuses unless --force-clobber (widened to --target in P12);
+  # a byte-identical file is a silent no-op.
+  T_SYMLINK_BLOCKS=()
+  T_COLLISIONS=()
+  for f in "$REPO_ROOT"/.github/agents/*.agent.md; do
+    d="$TARGET/.github/agents/$(basename "$f")"
+    if [ -L "$d" ]; then
+      T_SYMLINK_BLOCKS+=("$d")
+    elif [ -e "$d" ] && ! cmp -s "$f" "$d"; then
+      T_COLLISIONS+=("$d")
+    fi
+  done
+  if [ "${#T_SYMLINK_BLOCKS[@]}" -gt 0 ]; then
+    echo "REFUSED: the following destinations are symlinks; refusing to write through them — remove them and re-run if you intend to replace what they point to:" >&2
+    for p in "${T_SYMLINK_BLOCKS[@]}"; do echo "  $p" >&2; done
+    exit 1
+  fi
+  if [ "${#T_COLLISIONS[@]}" -gt 0 ] && [ "$FORCE_CLOBBER" -eq 0 ]; then
+    echo "REFUSED: the following destinations already exist in $TARGET/.github/agents and are not byte-identical to what this install would write — pass --force-clobber to overwrite them (this discards their current contents):" >&2
+    for p in "${T_COLLISIONS[@]}"; do echo "  $p" >&2; done
+    exit 1
+  fi
 
+  # sebastian HIGH-4 preflight: the trust-state validation that
+  # record_trust_root runs at the END of this branch is hoisted here — BEFORE
+  # the first mkdir/rm/cp — so a refusal (symlinked mozart-trust dir/file, or a
+  # control-char canonical root) never leaves even an empty agents dir behind.
+  USER_COPILOT_HOME="${COPILOT_HOME:-$REAL_HOME_AMBIENT/.copilot}"
+  if [ -d "$USER_COPILOT_HOME" ]; then
+    validate_trust_target "$USER_COPILOT_HOME" "$TARGET"
+  fi
+
+  mkdir -p "$TARGET/.github/agents"
+  # xander MEDIUM (TOCTOU): the collision matrix above is a separate pass from
+  # this write. Re-assert the leaf is not a symlink immediately before writing,
+  # and write to an unpredictable, exclusive temp then mv -f into place — so an
+  # attacker swapping a destination for a symlink between the check and here has
+  # no effect (cp never follows a link, mv -f replaces the name), and the temp
+  # name itself is not symlink-followable (sebastian HIGH-5).
+  for f in "$REPO_ROOT"/.github/agents/*.agent.md; do
+    d="$TARGET/.github/agents/$(basename "$f")"
+    if [ -L "$d" ]; then
+      echo "REFUSED: $d became a symlink after the collision check; refusing to write through it." >&2
+      exit 1
+    fi
+    make_temp_in "$TARGET/.github/agents"; t="$MOZART_LAST_TEMP"
+    cp "$f" "$t"
+    # MED-B: make_temp_in creates the temp 0600 and `cp` retains the existing
+    # destination mode, so without this an installed agent file would land 0600
+    # and become unreadable to other users of a shared checkout. Set the
+    # intended world-readable mode on the temp BEFORE the atomic rename.
+    chmod 0644 "$t"
+    mv -f "$t" "$d"
+  done
+
+  # P13/Y19b — this cp -R is a *merge* into an existing tree, so a nested
+  # pre-existing symlink inside the destination bundle (e.g. .github/mozart/
+  # config) would otherwise survive a reinstall and be written through.
+  # Remove the destination bundle directory first — that path only, never
+  # $TARGET, never .github — so the bundle is always rewritten from a clean
+  # slate. The container check above already refused if .github/mozart itself
+  # is the link; this handles links *inside* it.
+  rm -rf "$TARGET/.github/mozart"
   mkdir -p "$TARGET/.github/mozart"
   cp -R "$REPO_ROOT"/.github/mozart/. "$TARGET/.github/mozart/"
 
-  echo "installed .github/agents (22 files) and .github/mozart (VERSION $SOURCE_VERSION) into $TARGET"
+  # P14/Y17 — honest roster count: report the number of agent files actually
+  # present in the destination after the copy, computed here, never a
+  # hardcoded constant that silently lies as personas are added or dropped.
+  # `wc -l | tr -d ' '` because BSD wc right-pads its count while GNU does not.
+  N_AGENTS=$(ls "$TARGET"/.github/agents/*.agent.md 2>/dev/null | wc -l | tr -d ' ')
+  echo "installed .github/agents ($N_AGENTS files) and .github/mozart (VERSION $SOURCE_VERSION) into $TARGET"
+
+  # P16/D-E (Y4) — a --target install trusts the TARGET repo root, but the
+  # trust list is USER-SIDE state, not repo content. Append the canonical
+  # $TARGET to ${COPILOT_HOME:-$HOME/.copilot}/mozart-trust/roots when that
+  # home exists. When it does not (a consumer with no user-scope install),
+  # print the per-invocation override explicitly rather than silently leaving
+  # every launch from this repo refused — r1's "silent for --target" promise
+  # was false; it is now either recorded or told exactly why not.
+  # (USER_COPILOT_HOME was resolved and trust-validated in the preflight above.)
+  if [ -d "$USER_COPILOT_HOME" ]; then
+    record_trust_root "$USER_COPILOT_HOME" "$TARGET"
+    echo "recorded $(canonical_root "$TARGET") as a trusted repo root in $USER_COPILOT_HOME/mozart-trust/roots"
+  else
+    echo "NOTE: no Copilot home at $USER_COPILOT_HOME, so this repo was NOT added to the trust roots list. To launch mozart from it without the provenance gate refusing, pass the per-invocation override each time: MOZART_TRUST_REPO_BUNDLE=\"$(canonical_root "$TARGET")\" mozart \"<task>\" — or run a --user-scope install first. See docs."
+  fi
   exit 0
 fi
 
@@ -357,6 +959,37 @@ if is_absurd_root "$BIN_DIR"; then
 fi
 
 echo "Resolved Copilot home: $RESOLVED_COPILOT_HOME (source: $RESOLVED_COPILOT_HOME_SOURCE)"
+
+# P13 — refuse before any write when a user-scope container is a symlink
+# (Y19a adds <copilot-home> itself and <copilot-home>/agents to r1's two).
+# Only containers this invocation will actually write into are checked: the
+# bundle dir is skipped under --no-bundle, the wrapper bin dir under
+# --no-wrapper — refusing on a container we never touch would be a spurious
+# lockout, not a safety property. <copilot-home> and its agents dir are
+# always written (agents land there even under --no-bundle), so both are
+# always checked.
+CONTAINER_CHECKS=(
+  "Copilot home" "$RESOLVED_COPILOT_HOME"
+  "agents dir (<copilot-home>/agents)" "$RESOLVED_COPILOT_HOME/agents"
+)
+if [ "$NO_BUNDLE" -eq 0 ]; then
+  CONTAINER_CHECKS+=("bundle dir (<copilot-home>/mozart)" "$RESOLVED_COPILOT_HOME/mozart")
+fi
+if [ "$NO_WRAPPER" -eq 0 ]; then
+  CONTAINER_CHECKS+=("wrapper bin dir" "$BIN_DIR")
+fi
+refuse_if_symlinked_containers "${CONTAINER_CHECKS[@]}"
+
+# sebastian HIGH-1: canonicalize the install roots to absolute physical paths
+# NOW — after the container symlink refusal (so resolving symlinked ancestors
+# here can never mask a symlinked container the P13 check above must still see)
+# and before DEST_PATHS, the manifest, or any write derive from them. A raw
+# relative --copilot-home/--bin-dir would otherwise flow verbatim into the
+# ownership manifest, which promises absolute paths; a recorded 'tools/mozart'
+# is resolved by the uninstall against ITS OWN cwd and can delete an unrelated
+# byte-identical file. Refuses (exit 2) any root that cannot be made absolute.
+RESOLVED_COPILOT_HOME="$(canonicalize_root "Copilot home" "$RESOLVED_COPILOT_HOME")"
+BIN_DIR="$(canonicalize_root "wrapper bin dir" "$BIN_DIR")"
 
 SOURCE_VERSION="$(cat "$SOURCE_VERSION_FILE" 2>/dev/null || echo "unknown")"
 DEST_BUNDLE_VERSION_FILE="$RESOLVED_COPILOT_HOME/mozart/VERSION"
@@ -449,6 +1082,27 @@ if [ "${#COLLISIONS[@]}" -gt 0 ] && [ "$FORCE_CLOBBER" -eq 0 ]; then
 fi
 
 # --------------------------------------------------------------------------
+# Preflight (sebastian HIGH-4). Split validation from persistence: every state
+# path, format, permission and canonical root that could REFUSE is checked HERE,
+# before the first mkdir/rm/cp/manifest write below — so a refusal leaves the
+# bundle/agents/wrapper untouched rather than written-but-untracked. The
+# write-time atomic mechanisms (mktemp + mv -f, re-checked [ -L ]) still cover
+# the TOCTOU window; this only guarantees the FAIL happens before any mutation.
+#   - manifest: absolute+normalized+control-char on every DEST path (HIGH-1),
+#     symlinked/unreadable manifest leaf.
+#   - trust:    control-char canonical root (HIGH-3), symlinked trust dir/file.
+#   - wrapper:  symlinked wrapper-location allowlist (HIGH-2 authority file).
+# --------------------------------------------------------------------------
+validate_manifest_target "$RESOLVED_COPILOT_HOME/mozart-manifest.txt"
+for p in "${DEST_PATHS[@]}"; do
+  assert_manifest_path "$p"
+done
+validate_trust_target "$RESOLVED_COPILOT_HOME" "$REPO_ROOT"
+if [ "$NO_WRAPPER" -eq 0 ]; then
+  validate_wrapper_target "$RESOLVED_COPILOT_HOME"
+fi
+
+# --------------------------------------------------------------------------
 # Write. Bundle first, agents and the wrapper last (codex r2 #1) — this is
 # a best-effort ordering, not a transaction: nothing here rolls back a
 # partial failure, and no earlier step in this script claims otherwise. If
@@ -463,6 +1117,11 @@ fi
 # --------------------------------------------------------------------------
 
 if [ "$NO_BUNDLE" -eq 0 ]; then
+  # P13/Y19b — merge copy; remove the destination bundle dir first (that path
+  # only, never <copilot-home>) so a nested pre-existing symlink inside it
+  # cannot survive a reinstall and be written through. The container check
+  # above already refused if <copilot-home>/mozart itself is the link.
+  rm -rf "$RESOLVED_COPILOT_HOME/mozart"
   mkdir -p "$RESOLVED_COPILOT_HOME/mozart"
   cp -R "$REPO_ROOT"/.github/mozart/. "$RESOLVED_COPILOT_HOME/mozart/"
 fi
@@ -472,10 +1131,56 @@ if [ "$NO_WRAPPER" -eq 0 ]; then
   mkdir -p "$BIN_DIR"
 fi
 for i in "${!DEST_PATHS[@]}"; do
-  cp "${SRC_PATHS[$i]}" "${DEST_PATHS[$i]}"
+  d="${DEST_PATHS[$i]}"
+  # xander MEDIUM (TOCTOU): re-assert the leaf is not a symlink immediately
+  # before writing, and write via an unpredictable, exclusive temp + mv -f, so
+  # a destination swapped for a symlink between the collision matrix above and
+  # this write is irrelevant — cp never follows a link, mv -f replaces the name
+  # atomically, and the temp name itself is not symlink-followable (HIGH-5).
+  if [ -L "$d" ]; then
+    echo "REFUSED: $d became a symlink after the collision check; refusing to write through it." >&2
+    exit 1
+  fi
+  make_temp_in "$(dirname "$d")"; t="$MOZART_LAST_TEMP"
+  cp "${SRC_PATHS[$i]}" "$t"
+  # MED-B: make_temp_in creates the temp 0600 and both BSD and GNU `cp` retain
+  # the existing destination mode, so agent files would otherwise land 0600 and
+  # be unreadable to other users of a shared checkout. Set the intended mode on
+  # the temp BEFORE the atomic rename — 0755 for the executable wrapper, 0644
+  # for the world-readable agent definitions.
+  if [ "$NO_WRAPPER" -eq 0 ] && [ "$d" = "$BIN_DIR/mozart" ]; then
+    chmod 0755 "$t"
+  else
+    chmod 0644 "$t"
+  fi
+  mv -f "$t" "$d"
 done
+
+# P15/D-I — record ownership of exactly the shared-namespace files written
+# this run (agent definitions and, unless --no-wrapper, the CLI wrapper). The
+# bundle subtree under <copilot-home>/mozart/ is deliberately NOT tracked
+# here: it is this project's own directory, removed wholesale at uninstall,
+# never a per-file delete constrained by checksum. write_manifest unions with
+# any prior manifest, so a --no-wrapper or changed --bin-dir reinstall cannot
+# make an earlier-written path unrecoverable.
+write_manifest "$RESOLVED_COPILOT_HOME/mozart-manifest.txt" "${DEST_PATHS[@]}"
+
+# P16/D-E — record the SOURCE checkout as a trusted repo root, so the launch
+# wrapper's provenance gate (P17) exempts it. The recorded value is the
+# PHYSICAL resolution of $REPO_ROOT (via canonical_root), never $REPO_ROOT
+# itself — $REPO_ROOT is a bare logical `pwd` and the wrapper looks roots up
+# physically, so recording the logical form would refuse every launch under a
+# symlinked ancestor (D-H/Y3). The user-scope home was just created, so it
+# always exists here.
+record_trust_root "$RESOLVED_COPILOT_HOME" "$REPO_ROOT"
+
+# sebastian HIGH-2 — record the wrapper's ABSOLUTE install location in a
+# user-side allowlist the uninstall (P20) consults. This replaces the old,
+# forgeable `*/mozart` basename glob: the uninstall deletes a manifest wrapper
+# entry ONLY when it is a member of THIS out-of-band list, which a tampered
+# manifest cannot reach. Skipped under --no-wrapper (nothing was written).
 if [ "$NO_WRAPPER" -eq 0 ]; then
-  chmod 0755 "$BIN_DIR/mozart"
+  record_wrapper_location "$RESOLVED_COPILOT_HOME" "$BIN_DIR/mozart"
 fi
 
 # --------------------------------------------------------------------------

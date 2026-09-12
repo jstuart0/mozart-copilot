@@ -6,6 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches `1.0.0`. Before that, `0.x` releases may include breaking changes.
 
+## [0.3.0] - 2026-09-02
+
+OSS-readiness hardening: the campaign removes personal-infrastructure
+fingerprints, hardens both Python CLIs' exit-code and modifier contracts,
+re-bases the model maps onto live model IDs the harness actually offers, and
+adds three install/launch trust mechanisms — an ownership manifest, install-time
+trust roots, and a launch-wrapper provenance gate — each documented with its
+honest limits in `SECURITY.md`. No runtime persona behavior changes; the model
+default flip from `913f0b3` (5 of 22 agents) is what makes this a minor, not a
+patch, release.
+
+### Added
+
+- `scripts/check-fingerprints.sh` — a committed CI guard against
+  personal-infrastructure path fingerprints. Exit contract `0` = clean, `1` =
+  fingerprint found, `2` = the search itself errored (a real error never reads
+  as clean); the guard excludes itself from its own scan.
+- **Ownership manifest** at `<copilot-home>/mozart-manifest.txt` (mode `0600`,
+  one `<sha256>  <absolute-path>` line per installed file, union-with-dedup so a
+  later reinstall with different flags never forgets a path an earlier one
+  wrote). The documented uninstall procedure consumes it.
+- **Install-time trust roots** at `<copilot-home>/mozart-trust/roots` (dir
+  `0700`, file `0600`), recorded from a physical-identity canonicalization of the
+  install root; a successful `--target … --apply` also appends the target root to
+  the user-side list, and prints the override notice when there is no user-side
+  home to record into.
+- A live model-ID allowlist (`KNOWN_MODELS`) and a `check_model_ids` gate across
+  both map entry points, with per-role family binding so a declared `family` must
+  match its model's real provider.
+- Operator **upgrade / uninstall / troubleshoot** documentation in `README.md`; a
+  trust-boundary section with five known limits in `SECURITY.md`; and a decision
+  registry resolving every `D<n>` ID in `docs/COPILOT_PORT.md`.
+
+### Changed
+
+- **`install-bundle.sh --target` now refuses symlinked container directories and
+  unconsented non-identical overwrites**, on both install branches, and prints
+  the real copied file count instead of a hardcoded figure. A fresh install into
+  an empty target is unaffected.
+- **`scripts/mozart` now refuses a repo-local bundle differing from the installed
+  one unless the repo root is trusted** — a **bundle provenance** gate that is
+  consent + baseline comparison, not authenticity (no signature, no content
+  checksum). Trust is recorded at install time or named for a single invocation
+  by `MOZART_TRUST_REPO_BUNDLE=<repo-root>`; the gate guards the wrapper's `exec`
+  only and is bypassed by a bare `copilot` launch and by VS Code. Limits are
+  enumerated in `SECURITY.md`.
+- **`check_agents.py` action flags now compose** — previously only the first
+  action flag was honored and the rest were silently ignored; now every action
+  runs in one invocation and the highest-priority status is returned (`1` > `2` >
+  `0`). Modifier flags are accepted only with the action that consumes them,
+  otherwise the run exits `2` naming both flags, and `--emit-runtime-reads` is
+  mutually exclusive with all other actions.
+- `--force-clobber` now composes with `--target` (previously `--user-scope`
+  only); the two shipped install commands in `.github/mozart/INTEGRATION.md` are
+  repaired to match, each carrying the "use it on a deliberate upgrade; do not add
+  it to routine commands" caution.
+- Version bumped to `0.3.0` rather than `0.2.1`: a default-model change across 5
+  of 22 agents plus the dispatch-semantics and installer-refusal changes are not
+  patch-level.
+
+### Fixed
+
+- **The shipped model maps referenced models the harness no longer offers**, so
+  the installed roster could not be dispatched. Every map is re-based onto live
+  model IDs, all 22 personas are re-stamped by `apply_models.py` (never
+  hand-edited), and the new `check_model_ids` gate — bound through all three read
+  entry points and the `--preset … --apply` write path — stops a dead ID from
+  ever shipping again.
+- Personal-infrastructure path fingerprints removed from tracked text; the two
+  upstream checkout paths parameterized to a non-matching placeholder; the manual
+  `INDEX.md` document count corrected to the real file count.
+- CI hardening: the workflow pins `ubuntu-24.04` and the Python interpreter,
+  asserts (by positive content) that the PyYAML frontmatter cross-check actually
+  ran, wires the negative map/roster fixtures through both entry points, and
+  every new exit-code step asserts a required error substring rather than a bare
+  nonzero exit (so an exit `2` for the wrong reason can never read as caught).
+
 ## [0.2.0] - 2026-09-01
 
 Global install: one `install-bundle.sh --user-scope --apply` now installs

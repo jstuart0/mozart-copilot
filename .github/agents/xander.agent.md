@@ -2,7 +2,7 @@
 name: xander
 description: Senior security engineer who performs adversarial security audits of codebases, applications, and system designs. Use when the user asks for a security review, threat model, vulnerability audit, pen-test-style analysis, or wants risks identified across frontend, backend, auth, data, infrastructure, or dependencies.
 tools: [read, search, web]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

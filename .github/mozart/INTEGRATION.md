@@ -26,8 +26,19 @@ user-scope bundle installed by `scripts/install-bundle.sh --user-scope
 repo pinned this way wins over the shared one whenever the process is
 rooted at this repo's root. If neither candidate resolves, an agent stops
 and names both rather than improvising. See `docs/COPILOT_PORT.md` for the
-full rationale, including the CLI wrapper's repo-root grant (D9) and the
-two-literal-path probe's documented limit (D10).
+full rationale, including the CLI wrapper's repo-root grant and the
+two-literal-path probe's documented limit — each agent resolves its bundle from
+exactly two fixed candidates (`.github/mozart` under the working directory, then
+`~/.copilot/mozart`), so a bundle installed anywhere else is never found.
+
+**Trust boundary.** The CLI wrapper (`scripts/mozart`) runs a provenance gate
+before launching: if the repo you launch from ships its own `.github/mozart`
+bundle that differs from the one you installed, the wrapper refuses unless that
+repo root is trusted (recorded by an install, or named for one invocation by
+`MOZART_TRUST_REPO_BUNDLE=<repo-root>`). This is **consent + baseline
+comparison, not authenticity** — it proves the tree is not the one you
+installed from, never that it is genuine. It does not run under a bare
+`copilot` launch or under VS Code. `SECURITY.md` documents the full limits.
 
 **Sandboxing.** If your Copilot CLI has local sandboxing enabled (a preview
 feature at time of writing), `--add-dir` widens the file tool's *read*
@@ -54,7 +65,7 @@ Two correct ways to change models, in order of preference:
    `mozart-copilot` source repo, hand-edit
    `.github/mozart/config/model-map.jsonc` (or run `apply_models.py --preset <name> --apply`),
    run `apply_models.py --apply` to stamp every agent's frontmatter to
-   match, then reinstall: `scripts/install-bundle.sh --target <this-repo> --apply --force`.
+   match, then reinstall: `scripts/install-bundle.sh --target <this-repo> --apply --force --force-clobber`. `--force-clobber` overrides the byte-identity guard on the shared `<copilot-home>/agents/` namespace. Use it on a deliberate upgrade; do not add it to routine commands.
    This is the only path `--check`, `--check-families`, and `--check-tiers`
    actually validate before anything ships — map and frontmatter can't drift
    apart.
@@ -71,9 +82,9 @@ Two correct ways to change models, in order of preference:
    `.github/mozart/config/model-map.jsonc` (or run
    `apply_models.py --preset <name> --apply`) in the `mozart-copilot` source
    repo, then `apply_models.py --apply` to stamp every agent's frontmatter to
-   match — but reinstall with
-   `scripts/install-bundle.sh --user-scope --apply --force` instead of
-   `--target`. The install re-copies an already-validated pair — the bundle
+   match — but reinstall with `--user-scope` instead of `--target`:
+   `scripts/install-bundle.sh --user-scope --apply --force --force-clobber`. `--force-clobber` overrides the byte-identity guard on the shared `<copilot-home>/agents/` namespace. Use it on a deliberate upgrade; do not add it to routine commands.
+   The install re-copies an already-validated pair — the bundle
    is written before the agent definitions, so an install interrupted
    partway leaves the old agents pointing at the new, complete bundle
    rather than the reverse (not a transaction — see `install-bundle.sh`'s

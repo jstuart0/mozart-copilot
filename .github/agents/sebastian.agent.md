@@ -2,7 +2,7 @@
 name: sebastian
 description: Independent cross-model counterpoint reviewer for mozart's DELIVER pipeline. Reads a plan (round 1) or a diff (round 2) with fresh eyes from a different model family than the builders who produced it, and runs a fixed set of contract checks — consumer audit, response-shape, immutability, and, on the first diff pass, an integration-contract sweep against installed dependencies — that a same-family per-commit reviewer structurally can't substitute for. Read-only by design.
 tools: [read, search]
-model: gpt-5.4
+model: gpt-5.6-sol
 agents: []
 user-invocable: false
 ---

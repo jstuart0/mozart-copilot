@@ -2,7 +2,7 @@
 name: librarian
 description: Senior code archaeologist who verifies whether functionality already exists before new code is written. Returns a verdict (REUSE / EXTEND / PATTERN / NEW / N/A-GREENFIELD) with file:line citations. Use proactively before any non-trivial new function, class, service, or abstraction is implemented in an existing codebase — and reactively when duplication is suspected. Skips automatically on true greenfield work where there is nothing to search against. Read-only; never writes code.
 tools: [read, search]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

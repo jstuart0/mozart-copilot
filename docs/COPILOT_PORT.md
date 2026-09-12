@@ -20,6 +20,29 @@ documented sentence means what this port assumes (verify-at-implementation,
 step 11), and whether the Copilot CLI's `/fleet` can drive mozart's dispatch
 protocol at all (out of scope for v1 — D13).
 
+## Decision registry
+
+The `D<n>` decision IDs used throughout this document resolve here. These IDs
+are **scoped to this file** (D-C): a bare `(D9)` elsewhere in the repo resolves
+against the row below, and this table is the one canonical definition. Mass-
+renaming every citation repo-wide was deliberately not done — 27 sites across 10
+files, including a historical changelog — so the registry, not a rename, is what
+gives a bare citation its meaning.
+
+| ID | Decision |
+|---|---|
+| D1 | The counterpoint reviewer is a native in-process subagent (`sebastian`), not an external shelled-out CLI process; it carries `read, search` only — never `execute` — because it reviews adversarial content (an untrusted diff, third-party package sources). |
+| D2 | Counterpoint runs as two independent second-model reads: on the plan (round 1) and on the final diff (round 2), always from a different model family than produced the work under review. |
+| D3 | Seven roles reproduce upstream's three model tiers exactly; collapsing to five or six roles would silently re-tier an agent, so the extra roles are kept. |
+| D4 | Per-agent toolset grants are narrowed from upstream with a stated, per-agent rationale (e.g. `bob` loses `edit`, `librarian` loses shell access) rather than being silently dropped; the VS Code surface's read/discovery grant is delivered as two pasted settings under the same decision. |
+| D7 | One resolved bundle root per run, probed from two literal candidates in order (`.github/mozart` under the working directory, then `~/.copilot/mozart`); the first whose `VERSION` reads wins, and every runtime read for that run comes from that one root. |
+| D8 | `validation` (counterpoint) always runs a different model *family* than `builders`; enforced as code (`apply_models.py --check-families`), and each role's declared `family` must match its model's real provider — never a trusted free-text label. |
+| D9 | Copilot CLI grant: the `mozart` wrapper `cd`s to `git rev-parse --show-toplevel` and execs `copilot --add-dir <bundle-root>`, normalizing the relative first candidate and mozart's repo-root-relative state onto one root. |
+| D9b | Roster trust is the CLI's, not the wrapper's: loading a repo's `.github/agents` is trusting that repo's configuration exactly as a plain `copilot` launched there does. The mitigation is observability (mozart narrates the resolved root and `VERSION` on its first line), not mechanical detection. |
+| D10 | Exactly one agent is `user-invocable: true` (`mozart`); every specialist is `false` and reachable only through mozart's `agents:` allowlist. No agent reads `$HOME`/`$COPILOT_HOME` itself — an agent's second bundle candidate is always the literal `~/.copilot/mozart`, and a custom Copilot home is a wrapper/installer concept only. |
+| D13 | Runtime-surface scope: VS Code is the only supported and validated surface for v1; the Copilot CLI is loads-but-unvalidated; the cloud coding agent is out of scope. |
+| D14 | Build-time vs runtime split, one canonical location per file: an agent-read file lives in the bundle and installs with it; a build-time-only input to the validator/stamper/tests lives at the repo root and is never installed. |
+
 ## Primitive mapping
 
 The Claude Code tool noun on the left is what upstream personas declare in
@@ -398,20 +421,20 @@ would silently re-tier someone:
 
 | role | claude-bulk (shipped active map) | gpt-bulk |
 |---|---|---|
-| `conductor` | Claude Opus 5 | GPT-5.4 |
-| `deep-reviewers` | Claude Opus 5 | GPT-5.4 |
-| `builders` | Claude Sonnet 4.5 | GPT-5.3-Codex |
-| `reviewers` | Claude Sonnet 4.5 | GPT-5.3-Codex |
-| `support` | Claude Sonnet 4.5 | GPT-5.3-Codex |
-| `fast-scan` | Claude Haiku 4.5 | GPT-5.4-mini |
-| `validation` | **GPT-5.4** | **Claude Opus 5** |
+| `conductor` | Claude Opus 5 | GPT-5.6-Sol |
+| `deep-reviewers` | Claude Opus 5 | GPT-5.6-Sol |
+| `builders` | Claude Sonnet 5 | GPT-5.3-Codex |
+| `reviewers` | Claude Sonnet 5 | GPT-5.3-Codex |
+| `support` | Claude Sonnet 5 | GPT-5.3-Codex |
+| `fast-scan` | Claude Haiku 4.5 | GPT-5.6-Luna |
+| `validation` | **GPT-5.6-Sol** | **Claude Opus 5** |
 
 Flip the entire roster's family with one command, and `validation` flips
 with it, in the opposite direction, automatically — that's the whole point
 of shipping the switch as two presets rather than one hand-edited map:
 
 ```sh
-python3 scripts/apply_models.py --preset claude-bulk --apply   # 21 builders/reviewers on Anthropic, sebastian on GPT-5.4
+python3 scripts/apply_models.py --preset claude-bulk --apply   # 21 builders/reviewers on Anthropic, sebastian on GPT-5.6-Sol
 python3 scripts/apply_models.py --preset gpt-bulk --apply      # 21 builders/reviewers on OpenAI,    sebastian on Claude Opus 5
 ```
 
@@ -427,7 +450,7 @@ An earlier revision of this document described `deep-reviewers` as a
 disclosed *upgrade* for `bob`, `ruby`, and `valerie`, sourced from
 `agents/README.md`'s Model column, which lists all three as `sonnet`. That
 column is **stale**. Each persona's own `model:` frontmatter
-(`/Users/jaystuart/dev/mozart-orchestration/agents/{bob,ruby,valerie}.md`)
+(`/Users/<username>/dev/repo/agents/{bob,ruby,valerie}.md`)
 reads `opus`, matching `harry`. All four `deep-reviewers` members are
 upstream opus; the role is a straightforward, tier-preserving mapping, not
 an upgrade. `tests/fixtures/upstream-tiers.tsv` is transcribed from
@@ -439,22 +462,37 @@ tracked without gating on it.
 model names, not literal API identifiers — those are user-edited and
 conservative-double-sourced by design (Context, "What we're assuming"). This
 port derives a scalar `model:` string mechanically from the display name:
-lowercase, spaces to hyphens, dot preserved (`Claude Sonnet 4.5` →
-`claude-sonnet-4.5`, `GPT-5.4` → `gpt-5.4`, `GPT-5.3-Codex` →
-`gpt-5.3-codex`). `apply_models.py` validates every role's `model` as shape
-only (a non-empty scalar string) — never membership in a hard-coded ID list
-— so this convention is a stamping default, not a validated constraint; edit
+lowercase, spaces to hyphens, dot preserved (`Claude Sonnet 5` →
+`claude-sonnet-5`, `GPT-5.6-Sol` → `gpt-5.6-sol`, `GPT-5.3-Codex` →
+`gpt-5.3-codex`). `apply_models.py` validates every role's `model` as a
+non-empty scalar string **and**, since P10B (R1), as a member of the live
+`KNOWN_MODELS` registry in `scripts/check_agents.py` — a role assigned a model
+the harness no longer offers is now rejected rather than silently shipped, and
+each role's declared `family` must match that model's real provider (this is
+what makes D8's cross-family invariant enforced, not advisory). The registry is
+a static, hand-maintained forward-maintenance item; edit
 `.github/mozart/config/model-map.jsonc` directly, or a preset in
-`config/model-maps/`, for your org's actual model policy.
+`config/model-maps/`, for your org's actual model policy, and add any new model
+ID to `KNOWN_MODELS` when you do.
 
-Every role also carries a same-family `fallback`, surfaced by
+Every role also carries a `fallback`, surfaced by
 `apply_models.py --explain` and never itself stamped into a persona's
 `model:` — for when the primary is org-disabled or deprecated (a real risk:
-global model policy went GA 2026-08-26).
+global model policy went GA 2026-08-26). The shipped maps follow a
+**same-family** convention for fallbacks, but note that this is a convention,
+**not an enforced invariant**: `check_model_ids` deliberately does not bind a
+`fallback` to its role's family (a degradation path is not a D8 violation), so
+it validates only that a present fallback is a *known* model, never that it
+shares the primary's provider. The consequence to weigh before diverging from
+the convention: a cross-family fallback could, during a provider outage,
+converge the builders and validation roles onto a single family and silently
+defeat the D8 cross-family guarantee for the duration of the outage. If you
+need same-family fallback guaranteed rather than merely conventional, that is a
+design change (enforcement in `check_model_ids`), not a documentation edit.
 
-- `jackson` — role `builders` → `claude-sonnet-4.5`
+- `jackson` — role `builders` → `claude-sonnet-5`
 - `bob` — role `deep-reviewers` → `claude-opus-5` (upstream opus, exact match)
-- `sebastian` — role `validation` → `gpt-5.4` (the non-builder family, D8)
+- `sebastian` — role `validation` → `gpt-5.6-sol` (the non-builder family, D8)
 
 ## Model attestation
 

@@ -31,6 +31,7 @@ sebastian is exempt by name — net-new, no upstream row).
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -39,21 +40,41 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_agents import (  # noqa: E402
     REPO_ROOT,
-    AGENTS_DIR,
     FrontmatterError,
     agent_stem,
+    check_model_ids,
     discover_agent_files,
     load_jsonc,
+    rel_or_abs,
     split_frontmatter,
+    validate_map_structure,
 )
 
 CANONICAL_MAP = REPO_ROOT / ".github" / "mozart" / "config" / "model-map.jsonc"
 PRESETS_DIR = REPO_ROOT / "config" / "model-maps"
 UPSTREAM_TIERS_TSV = REPO_ROOT / "tests" / "fixtures" / "upstream-tiers.tsv"
-# The r5 DATA cross-check (non-gating) reads this when present; an installed
-# copy of this repo won't have the upstream source checkout, and that's
-# fine — see data_cross_check_readme_vs_frontmatter().
-UPSTREAM_README = Path("/Users/jaystuart/dev/mozart-orchestration/agents/README.md")
+# The r5 DATA cross-check (non-gating) reads the upstream agents/README.md
+# when a source checkout is reachable; an installed copy of this repo won't
+# have that checkout, and that's fine — see
+# data_cross_check_readme_vs_frontmatter(). The path is no longer hardcoded
+# to one person's layout (C1): it is resolved per invocation from an
+# explicit flag or the shared $MOZART_UPSTREAM_CHECKOUT env var, defaulting
+# to None = skip. resolve_upstream_readme() below is the single resolver.
+UPSTREAM_README_SUBPATH = "agents/README.md"
+
+
+def resolve_upstream_readme(explicit: str = None):
+    """Resolve the optional upstream agents/README.md for the non-gating DATA
+    cross-check. Order: explicit --upstream-readme flag →
+    $MOZART_UPSTREAM_CHECKOUT joined with agents/README.md → None (skip).
+    None reaches data_cross_check_readme_vs_frontmatter()'s existing
+    skip branch with no new code path (D-A option B)."""
+    if explicit:
+        return Path(explicit)
+    checkout = os.environ.get("MOZART_UPSTREAM_CHECKOUT")
+    if checkout:
+        return Path(checkout) / UPSTREAM_README_SUBPATH
+    return None
 
 TIER_RANK = {"haiku": 0, "sonnet": 1, "opus": 2}
 ROLE_TIER = {
@@ -91,15 +112,6 @@ def resolve_agents_dir(path_str) -> Path:
     return p
 
 
-def rel_or_abs(p: Path) -> str:
-    """Display a path relative to REPO_ROOT when it's under the source
-    checkout; absolute otherwise. An installed (out-of-tree) file — reached
-    via --agents-dir or an out-of-tree --validate-map path — makes
-    Path.relative_to(REPO_ROOT) raise ValueError, which this guards against
-    (bob H2)."""
-    return str(p.relative_to(REPO_ROOT)) if p.is_relative_to(REPO_ROOT) else str(p)
-
-
 def load_map(path: Path):
     """Returns (map_dict, errors). map_dict is {} on parse failure."""
     if not path.exists():
@@ -113,46 +125,11 @@ def load_map(path: Path):
     return m, []
 
 
-def validate_structure(m: dict, agents_dir: Path = None) -> list:
-    """The three baseline invariants shared by every check. Returns errors.
-
-    agents_dir (codex M2, bob H2): validate against an installed roster
-    (--agents-dir) instead of .github/agents/ — without this, an
-    installed-tree check would validate map coverage against the *source
-    checkout's* roster and report a clean bill for the wrong tree."""
-    errors = []
-    roles = m.get("roles")
-    agents_block = m.get("agents")
-    if not isinstance(roles, dict):
-        errors.append("map is missing a 'roles' object")
-        roles = {}
-    if not isinstance(agents_block, dict):
-        errors.append("map is missing an 'agents' object")
-        agents_block = {}
-
-    for role_name, role_def in roles.items():
-        model = role_def.get("model") if isinstance(role_def, dict) else None
-        if not isinstance(model, str) or not model.strip():
-            errors.append(f"role '{role_name}' has no non-empty 'model' scalar")
-
-    for agent_name, role in agents_block.items():
-        if role not in roles:
-            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
-
-    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
-    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
-    map_agents = set(agents_block.keys())
-    for missing in sorted(discovered - map_agents):
-        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
-    for extra in sorted(map_agents - discovered):
-        # bob N9: name the directory actually searched, not a hardcoded
-        # '.github/agents/' — under --agents-dir that literal would send the
-        # operator looking in the source checkout for a file missing from
-        # the *installed* tree.
-        missing_path = effective_agents_dir / f"{extra}.agent.md"
-        errors.append(f"map assigns a role to '{extra}' but no {rel_or_abs(missing_path)} exists")
-
-    return errors
+# validate_structure() lived here; deleted in P7 (D-B.2). Its logic — plus the
+# orphan-role check cmd_map used to own — now lives in
+# check_agents.validate_map_structure(), the single shared structural validator
+# imported above. The import edge stays one-directional (apply_models.py ->
+# check_agents.py); this module never gains a reverse dependency.
 
 
 def check_families(m: dict) -> list:
@@ -178,23 +155,30 @@ def load_upstream_tiers() -> dict:
     return tiers
 
 
-def data_cross_check_readme_vs_frontmatter() -> None:
+def data_cross_check_readme_vs_frontmatter(upstream_readme=None) -> None:
     """r5's non-gating half. tests/fixtures/upstream-tiers.tsv is
     transcribed from persona frontmatter, deliberately not from
     agents/README.md's Model column, because that column is stale for
     bob/ruby/valerie. This prints one DATA line per disagreement between
     the two sources so the staleness stays visible instead of silently
     reappearing the next time someone regenerates the TSV from the README.
-    Never returns errors and never affects the caller's exit code. When the
-    upstream source checkout isn't present (e.g. an installed copy of this
-    bundle, which never ships tests/), prints one DATA line saying the
-    cross-check was skipped rather than doing nothing silently."""
-    if not UPSTREAM_README.exists():
-        print(f"DATA: cross-check skipped — {UPSTREAM_README} not present (expected outside the source checkout)")
+    Never returns errors and never affects the caller's exit code. When no
+    upstream source checkout is configured or reachable (e.g. an installed
+    copy of this bundle, which never ships tests/), prints one DATA line
+    saying the cross-check was skipped rather than doing nothing silently.
+    `upstream_readme` is the resolve_upstream_readme() result: an explicit
+    path, a $MOZART_UPSTREAM_CHECKOUT-derived path, or None."""
+    if upstream_readme is None:
+        print("DATA: cross-check skipped — no upstream source checkout configured "
+              "(expected outside the source checkout; set --upstream-readme or "
+              "$MOZART_UPSTREAM_CHECKOUT to enable)")
+        return
+    if not upstream_readme.exists():
+        print(f"DATA: cross-check skipped — {upstream_readme} not present (expected outside the source checkout)")
         return
 
     readme_tiers = {}
-    for line in UPSTREAM_README.read_text(encoding="utf-8").splitlines():
+    for line in upstream_readme.read_text(encoding="utf-8").splitlines():
         m = re.match(r"\|\s*(\w[\w-]*)\s*\|.*\|\s*(opus|sonnet|haiku)\s*\|", line)
         if m:
             readme_tiers[m.group(1)] = m.group(2)
@@ -326,8 +310,13 @@ def cmd_check(path_str=None, agents_dir: Path = None) -> int:
         for e in errors:
             print(f"FAIL: {e}")
         return 1
-    struct_errors = validate_structure(m, agents_dir)
+    struct_errors = validate_map_structure(m, agents_dir)
     for e in struct_errors:
+        print(f"FAIL: {e}")
+    # R1 live-model-ID gate (kept separate from validate_map_structure per
+    # D-B.2; absolute, not preset-relative, so safe on every map).
+    model_errors = check_model_ids(m)
+    for e in model_errors:
         print(f"FAIL: {e}")
 
     diffs, diff_errors = compute_diffs(m, agents_dir)
@@ -336,11 +325,19 @@ def cmd_check(path_str=None, agents_dir: Path = None) -> int:
     for f, stem, old, new in diffs:
         print(f"DRIFT {rel_or_abs(f)}: model: {old} != map's {new!r} for role of '{stem}'")
 
-    return 1 if (struct_errors or diff_errors or diffs) else 0
+    return 1 if (struct_errors or model_errors or diff_errors or diffs) else 0
 
 
 def cmd_stamp(apply: bool, preset: str) -> int:
     if preset:
+        # --preset names a bare map under config/model-maps/, never a path
+        # (xander L3): reject any separator or parent-dir token before it can
+        # reach PRESETS_DIR / f"{preset}.jsonc", or "../../some/map" escapes the
+        # preset directory and, if it validates, gets stamped over the canonical
+        # map. Constrain to a filename component; resolution happens after.
+        if "/" in preset or "\\" in preset or ".." in preset or preset != os.path.basename(preset):
+            print(f"FAIL: --preset must be a bare preset name, not a path (got '{preset}')")
+            return 1
         preset_path = PRESETS_DIR / f"{preset}.jsonc"
         if not preset_path.exists():
             print(f"FAIL: no such preset {preset_path.relative_to(REPO_ROOT)}")
@@ -350,15 +347,16 @@ def cmd_stamp(apply: bool, preset: str) -> int:
             for e in preset_errors:
                 print(f"FAIL: {e}")
             return 1
-        struct_errors = validate_structure(preset_map)
+        struct_errors = validate_map_structure(preset_map)
         if struct_errors:
             for e in struct_errors:
                 print(f"FAIL: preset '{preset}': {e}")
             return 1
         preset_family_errors = check_families(preset_map)
         preset_tier_errors = check_tiers(preset_map)
-        if preset_family_errors or preset_tier_errors:
-            for e in preset_family_errors + preset_tier_errors:
+        preset_model_errors = check_model_ids(preset_map)
+        if preset_family_errors or preset_tier_errors or preset_model_errors:
+            for e in preset_family_errors + preset_tier_errors + preset_model_errors:
                 print(f"FAIL: preset '{preset}': {e}")
             print(f"refusing to stamp: preset '{preset}' fails validation (see above) — the canonical map is left unchanged")
             return 1
@@ -373,7 +371,7 @@ def cmd_stamp(apply: bool, preset: str) -> int:
         for e in errors:
             print(f"FAIL: {e}")
         return 1
-    struct_errors = validate_structure(m)
+    struct_errors = validate_map_structure(m)
     if struct_errors:
         for e in struct_errors:
             print(f"FAIL: {e}")
@@ -382,12 +380,16 @@ def cmd_stamp(apply: bool, preset: str) -> int:
     # Refuse to stamp a map that fails an invariant, whether or not it just
     # arrived via --preset. Structural validity alone isn't enough — a
     # structurally-fine preset can still violate D8 (same-family
-    # validation) or silently retier someone; catch both before any
+    # validation), silently retier someone, or carry a dead / mislabeled
+    # model ID (R1 / xander M1: without check_model_ids here, --preset … --apply
+    # would copy a dead ID into the canonical map and stamp it into 22
+    # personas while the read-path gate watched). Catch all three before any
     # frontmatter write, not after.
     family_errors = check_families(m)
     tier_errors = check_tiers(m)
-    if family_errors or tier_errors:
-        for e in family_errors + tier_errors:
+    model_errors = check_model_ids(m)
+    if family_errors or tier_errors or model_errors:
+        for e in family_errors + tier_errors + model_errors:
             print(f"FAIL: {e}")
         print("refusing to stamp: the active map fails validation (see above)")
         return 1
@@ -419,7 +421,7 @@ def cmd_stamp(apply: bool, preset: str) -> int:
 # --validate-map / --check-families / --check-tiers dispatch
 # --------------------------------------------------------------------------
 
-def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path = None) -> int:
+def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path = None, upstream_readme=None) -> int:
     path = resolve_map_path(path_str)
     m, errors = load_map(path)
     if errors:
@@ -427,13 +429,17 @@ def run_map_checks(path_str, do_families: bool, do_tiers: bool, agents_dir: Path
             print(f"FAIL: {e}")
         return 1
 
-    all_errors = list(validate_structure(m, agents_dir))
+    all_errors = list(validate_map_structure(m, agents_dir))
+    # R1 live-model-ID gate — always runs (absolute validity, not a modifier),
+    # so --validate-map with no flags still rejects a dead ID or a family
+    # mislabel. Kept a separate function from validate_map_structure per D-B.2.
+    all_errors += check_model_ids(m)
     if do_families:
         all_errors += check_families(m)
     if do_tiers:
         all_errors += check_tiers(m)
         # Non-gating: never contributes to all_errors / the exit code.
-        data_cross_check_readme_vs_frontmatter()
+        data_cross_check_readme_vs_frontmatter(upstream_readme)
 
     for e in all_errors:
         print(f"FAIL: {e}")
@@ -456,6 +462,13 @@ def build_parser():
     p.add_argument("--check-tiers", action="store_true", help="assert no agent's role sits below its upstream tier")
     p.add_argument("--explain", action="store_true", help="print each role's model/family/fallback")
     p.add_argument(
+        "--upstream-readme",
+        metavar="PATH",
+        help="path to the upstream agents/README.md for the non-gating DATA cross-check "
+             "(meaningful only with --check-tiers). Defaults to $MOZART_UPSTREAM_CHECKOUT/agents/README.md, "
+             "or is skipped when neither is set.",
+    )
+    p.add_argument(
         "--agents-dir",
         metavar="DIR",
         help="validate against an installed agents directory (e.g. <copilot-home>/agents) instead of "
@@ -476,6 +489,74 @@ def main(argv=None) -> int:
     if args.agents_dir and args.apply:
         print("usage error: --agents-dir is read-only and not valid with --apply (--apply remains repo-only)")
         return 2
+    # sebastian HIGH-6: write actions (--apply, --preset) must PARTICIPATE in
+    # the compatibility matrix, not silently lose to a first-flag-wins dispatch.
+    # The read checks below (--check / --explain / --validate-map /
+    # --check-families / --check-tiers) set ran_a_check and RETURN before
+    # cmd_stamp is ever reached — so `--preset X --apply --check-tiers`,
+    # `--preset X --check`, and `--apply --explain` used to run only the read
+    # check against the CURRENT canonical map and silently ignore the requested
+    # preset/write. This is the exact H1 defect class the campaign exists to
+    # kill. Reject any read/write mix outright (exit 2) rather than pick a
+    # surprising order: a write and a read-only assertion are different
+    # intentions and combining them is always a mistake.
+    write_requested = args.apply or (args.preset is not None)
+    read_requested = (
+        args.check
+        or args.explain
+        or (args.validate_map is not None)
+        or args.check_families
+        or args.check_tiers
+    )
+    if write_requested and read_requested:
+        write_flag = "--apply" if args.apply else "--preset"
+        read_flags = [
+            name
+            for name, on in (
+                ("--check", args.check),
+                ("--explain", args.explain),
+                ("--validate-map", args.validate_map is not None),
+                ("--check-families", args.check_families),
+                ("--check-tiers", args.check_tiers),
+            )
+            if on
+        ]
+        print(
+            f"usage error: {write_flag} (a write action) cannot be combined with "
+            f"read-only check{'s' if len(read_flags) > 1 else ''} {', '.join(read_flags)} — "
+            "run the write and the checks as separate invocations so neither is silently ignored"
+        )
+        return 2
+    # P6/Y6 modifier compatibility matrix: --upstream-readme is only meaningful
+    # with --check-tiers (data_cross_check_readme_vs_frontmatter runs solely
+    # under do_tiers). Supplying it with any other action would accept-and-
+    # discard it — the silently-ignored-modifier defect this campaign kills.
+    if args.upstream_readme is not None and not args.check_tiers:
+        print(
+            "usage error: --upstream-readme is only meaningful with --check-tiers "
+            "(the upstream README DATA cross-check runs solely under --check-tiers)"
+        )
+        return 2
+    # MED-C: --agents-dir DIR only redirects which agent-definitions roster the
+    # READ checks below validate against — cmd_check and run_map_checks are its
+    # only consumers. Supplied with --preset/--apply (write) or --explain (which
+    # never reads the roster) it is silently ignored — the same accept-and-
+    # discard defect class this campaign kills. Require at least one consuming
+    # action. (--apply is caught by the more specific guard above; this covers
+    # --agents-dir alone, with --preset, and with --explain.)
+    agents_dir_consumed = (
+        args.check
+        or (args.validate_map is not None)
+        or args.check_families
+        or args.check_tiers
+    )
+    if args.agents_dir is not None and not agents_dir_consumed:
+        print(
+            "usage error: --agents-dir DIR only affects the roster the read checks "
+            "validate against; supply it with at least one of --check, --validate-map, "
+            "--check-families, --check-tiers (it is ignored by --apply, --preset, and --explain)"
+        )
+        return 2
 
     # Every read-only check below composes in one invocation instead of a
     # first-matching-flag-wins dispatch (the same class of bug as Phase 6's
@@ -486,6 +567,7 @@ def main(argv=None) -> int:
     # means .github/agents/.
     active_map_path = args.validate_map
     active_agents_dir = resolve_agents_dir(args.agents_dir)
+    active_upstream_readme = resolve_upstream_readme(args.upstream_readme)
     ran_a_check = False
     exit_code = 0
 
@@ -496,7 +578,7 @@ def main(argv=None) -> int:
         ran_a_check = True
 
     if args.validate_map or args.check_families or args.check_tiers:
-        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers, active_agents_dir)
+        rc = run_map_checks(active_map_path, args.check_families, args.check_tiers, active_agents_dir, active_upstream_readme)
         if rc != 0:
             exit_code = 1
         ran_a_check = True

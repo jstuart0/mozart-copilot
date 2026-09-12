@@ -1,6 +1,6 @@
 # upstream-tiers.tsv — agent -> upstream model tier, transcribed from each
 # upstream persona's own `model:` frontmatter
-# (grep '^model:' /Users/jaystuart/dev/mozart-orchestration/agents/*.md),
+# (grep '^model:' /Users/<username>/dev/repo/agents/*.md),
 # NOT from agents/README.md's Model column — that column is stale (it lists
 # bob/ruby/valerie as sonnet; their actual frontmatter is opus). Frontmatter
 # is the source of truth; a --check-doc-table-style drift check against

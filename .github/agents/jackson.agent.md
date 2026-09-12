@@ -2,7 +2,7 @@
 name: jackson
 description: Senior software engineer who builds features and fixes bugs end-to-end with high standards. Use when the user asks to implement, build, ship, fix, or refactor — anything that requires writing real code that has to work in production. Synthesizes architectural rigor, security awareness, UX care, and code-health discipline into the actual implementation.
 tools: [read, search, edit, execute, web]
-model: claude-sonnet-4.5
+model: claude-sonnet-5
 agents: []
 user-invocable: false
 ---

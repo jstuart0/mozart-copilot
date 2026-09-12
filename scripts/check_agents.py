@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -70,7 +71,27 @@ AGENTS_DIR = REPO_ROOT / ".github" / "agents"
 UPSTREAM_CARVE_START_LINE = 7
 UPSTREAM_CARVE_END_LINE = 2400
 UPSTREAM_CARVE_EXPECTED_CHARS = 241189
-UPSTREAM_MOZART_MD = Path("/Users/jaystuart/dev/mozart-orchestration/agents/mozart.md")
+# The upstream mozart.md live re-derivation (below, in cmd_check_carve) reads
+# this when a source checkout is reachable. The path is no longer hardcoded
+# to one person's layout (C1): it is resolved per invocation from an explicit
+# --upstream-mozart-md flag or the shared $MOZART_UPSTREAM_CHECKOUT env var,
+# defaulting to None = skip. resolve_upstream_mozart_md() below is the single
+# resolver.
+UPSTREAM_MOZART_MD_SUBPATH = "agents/mozart.md"
+
+
+def resolve_upstream_mozart_md(explicit: str = None):
+    """Resolve the optional upstream agents/mozart.md for the carve's live
+    re-derivation cross-check. Order: explicit --upstream-mozart-md flag →
+    $MOZART_UPSTREAM_CHECKOUT joined with agents/mozart.md → None (skip).
+    None reaches cmd_check_carve()'s existing .exists()-guarded skip branch
+    with no new code path (D-A option B)."""
+    if explicit:
+        return Path(explicit)
+    checkout = os.environ.get("MOZART_UPSTREAM_CHECKOUT")
+    if checkout:
+        return Path(checkout) / UPSTREAM_MOZART_MD_SUBPATH
+    return None
 BUNDLE_PREFIX = ".github/mozart/"
 TOOLSETS_PATH = REPO_ROOT / "config" / "toolsets.jsonc"
 RUNTIME_READS_TSV = REPO_ROOT / "tests" / "runtime-reads.tsv"
@@ -419,8 +440,8 @@ def yaml_crosscheck_mode_note() -> str:
     hand-rolled parser alone or to both, never assumed (live-parser
     incident, 2026-09-01)."""
     if HAVE_PYYAML:
-        return "frontmatter validation mode: hand-rolled parser + PyYAML cross-check (both ran)"
-    return "frontmatter validation mode: hand-rolled parser only (PyYAML not importable — cross-check skipped)"
+        return "frontmatter cross-check ran: hand-rolled parser + PyYAML (both parsers)"
+    return "frontmatter cross-check skipped: PyYAML not importable — hand-rolled parser only"
 
 
 def agent_stem(path: Path) -> str:
@@ -591,6 +612,39 @@ def validate_agent_file(path: Path) -> ValidationResult:
 # --self-test
 # --------------------------------------------------------------------------
 
+# Every negative fixture must be rejected for a DECLARED reason, not merely
+# exit nonzero — a fixture that fails for an unrelated cause is a green test
+# proving nothing (H5a). Each value is a substring that MUST appear in that
+# fixture's own --file error output and MUST NOT appear in any other fixture's
+# (the cross-contamination pass in run_self_test proves the table is not a
+# tautology). Substrings are copied verbatim from live --file output, never
+# guessed. Adding a tests/fixtures/invalid-*.agent.md file without adding its
+# row here fails the self-test — you cannot ship a negative fixture without
+# declaring why it must be rejected.
+REJECT_REASONS = {
+    "invalid-agent-tool-without-agents.agent.md": "'agent' is in 'tools' but frontmatter 'agents' is empty",
+    "invalid-agents-without-agent-tool.agent.md": "frontmatter 'agents' is non-empty but 'agent' is not in 'tools'",
+    "invalid-copilot-home-file-path.agent.md": "('$COPILOT_HOME/mozart/m')",
+    "invalid-model-array.agent.md": "frontmatter 'model' is a YAML sequence, not a scalar string",
+    "invalid-name-mismatch.agent.md": "does not match filename stem 'invalid-name-mismatch'",
+    "invalid-no-attestation.agent.md": "body has no 'MODEL-ATTESTATION' marker",
+    "invalid-no-description.agent.md": "frontmatter 'description' is missing or empty",
+    "invalid-no-frontmatter.agent.md": "missing opening '---' delimiter on line 1",
+    "invalid-no-model.agent.md": "frontmatter 'model' is missing",
+    "invalid-no-name.agent.md": "frontmatter 'name' is missing or empty",
+    "invalid-no-tools.agent.md": "frontmatter 'tools' is missing",
+    "invalid-non-mozart-dispatch-authority.agent.md": "'invalid-non-mozart-dispatch-authority' holds the 'agent' tool",
+    "invalid-outside-bundle-read.agent.md": "references 'PIPELINE.md' without the '.github/mozart/' bundle prefix",
+    "invalid-oversize-body.agent.md": "exceeds the 30000-char cap",
+    "invalid-two-user-invocable.agent.md": "'user-invocable: true' is set, but only 'mozart' may be user-invocable",
+    "invalid-unclosed-frontmatter.agent.md": "unclosed frontmatter: no closing '---' delimiter found",
+    "invalid-unknown-tool.agent.md": "tools entry 'Bash' is not a member of config/toolsets.jsonc",
+    "invalid-unquoted-colon-description.agent.md": "key 'description' is an unquoted value containing ': '",
+    "invalid-user-bundle-file-path.agent.md": "('.copilot/mozart/m')",
+    "invalid-user-bundle-shell-copy.agent.md": "shell-copies from the user-scope bundle root at command position",
+}
+
+
 def run_self_test(forms: bool) -> int:
     print(yaml_crosscheck_mode_note())
     ok = True
@@ -614,7 +668,7 @@ def run_self_test(forms: bool) -> int:
         print(f"accept: {p.relative_to(REPO_ROOT)}{tag}")
         return True
 
-    def check_reject(p: Path) -> bool:
+    def check_reject(p: Path, expect_substring: str) -> bool:
         nonlocal ok
         if not p.exists():
             print(f"MISSING fixture: {p.relative_to(REPO_ROOT)}")
@@ -625,7 +679,15 @@ def run_self_test(forms: bool) -> int:
             print(f"FAIL (expected REJECT): {p.relative_to(REPO_ROOT)} — validator accepted it")
             ok = False
             return False
-        print(f"reject: {p.relative_to(REPO_ROOT)} — {'; '.join(r.errors)}")
+        joined = "; ".join(r.errors)
+        if expect_substring not in joined:
+            print(
+                f"FAIL (rejected for the WRONG reason): {p.relative_to(REPO_ROOT)} — "
+                f"expected substring {expect_substring!r} not in: {joined}"
+            )
+            ok = False
+            return False
+        print(f"reject: {p.relative_to(REPO_ROOT)} — {joined}")
         return True
 
     check_accept(FIXTURES_DIR / "valid.agent.md")
@@ -636,7 +698,39 @@ def run_self_test(forms: bool) -> int:
         print("FAIL: no tests/fixtures/invalid-*.agent.md fixtures found")
         ok = False
     for p in invalid_fixtures:
-        check_reject(p)
+        reason = REJECT_REASONS.get(p.name)
+        if reason is None:
+            print(
+                f"FAIL: no REJECT_REASONS entry for {p.name} — a negative fixture "
+                f"cannot be added without declaring why it must be rejected (H5a)"
+            )
+            ok = False
+            continue
+        check_reject(p, reason)
+
+    # Cross-contamination: prove no fixture's error output also satisfies
+    # another fixture's declared substring. Without this the table could pass
+    # while every fixture actually fails for one shared unrelated reason — a
+    # tautology (H5a). Only tabled, on-disk fixtures participate.
+    errors_by_fixture = {
+        p.name: "; ".join(validate_agent_file(p).errors)
+        for p in invalid_fixtures
+        if p.name in REJECT_REASONS and p.exists()
+    }
+    contaminated = False
+    for name, text in errors_by_fixture.items():
+        for other_name, other_sub in REJECT_REASONS.items():
+            if other_name == name:
+                continue
+            if other_sub in text:
+                print(
+                    f"FAIL cross-contamination: {name} output also satisfies "
+                    f"{other_name}'s substring {other_sub!r}"
+                )
+                contaminated = True
+                ok = False
+    if not contaminated:
+        print("cross-contamination: none")
 
     if forms:
         forms_dir = FIXTURES_DIR / "forms"
@@ -647,7 +741,8 @@ def run_self_test(forms: bool) -> int:
         for p in form_fixtures:
             check_accept(p)
         # unclosed '---' rejected — reuses the shared negative fixture
-        check_reject(FIXTURES_DIR / "invalid-unclosed-frontmatter.agent.md")
+        unclosed = "invalid-unclosed-frontmatter.agent.md"
+        check_reject(FIXTURES_DIR / unclosed, REJECT_REASONS[unclosed])
 
     print(f"\nself-test: {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
@@ -726,9 +821,209 @@ def cmd_validate_all(min_agents) -> int:
 
 # --------------------------------------------------------------------------
 # --map
+#
+# Decomposed per D-B.2. cmd_map's old body folded three orthogonal checks
+# together — map structure, canonical-map STAMP drift, and mozart's allowlist.
+# The stamp cross-check was UNCONDITIONAL, which made the function unsafe to
+# reuse: apply_models.py's preset loop (check.yml:119-123) validates five
+# presets against one on-disk roster, and a stamp matches at most ONE preset,
+# so folding stamp drift into a shared validator turns every other preset red
+# by construction with no possible remedy. The stamp check is therefore GONE
+# from this file entirely (Y5): apply_models.py --check remains the sole
+# canonical-map stamp gate (check.yml:110, a standalone step), so no coverage
+# is lost. What remains here — validate_map_structure() and
+# check_mozart_allowlist() — is stamp-free and safe to share.
 # --------------------------------------------------------------------------
 
-def cmd_map(path_str: str, min_agents=None) -> int:
+def rel_or_abs(p: Path) -> str:
+    """Display a path relative to REPO_ROOT when it's under the source
+    checkout; absolute otherwise. An installed (out-of-tree) directory reached
+    via --agents-dir makes Path.relative_to(REPO_ROOT) raise ValueError, which
+    this guards against (bob H2). Lives here so both scripts share one
+    implementation over the one-directional import edge apply_models.py -> this
+    module."""
+    return str(p.relative_to(REPO_ROOT)) if p.is_relative_to(REPO_ROOT) else str(p)
+
+
+def validate_map_structure(m: dict, agents_dir: Path = None, min_agents=None) -> list:
+    """Shared, unconditional structural validator for a parsed model map.
+
+    Called by BOTH check_agents.py --map and apply_models.py's map-reading
+    commands. Returns a list of failure strings (empty == pass); NEVER raises on
+    a malformed map — malformation is itself a returned failure so a caller can
+    print it and move on. All structural failures are collected then returned in
+    a stable order (declaration order for role/agent walks, sorted for the set
+    differences) so CI diffs are deterministic. Performs NO stamp comparison —
+    that is exactly what makes it safe to call from the preset loop (D-B.2).
+
+    Covers: the map's own shape ('roles'/'agents' objects, every role carries a
+    non-empty 'model' scalar), the two-directional role<->agent coverage
+    traversal (orphan roles, undefined roles, and roster coverage in both
+    directions), and — when min_agents is given — the roster floor. The roster
+    it walks is agents_dir (falling back to .github/agents/), so an installed
+    tree is validated against its own roster, not the source checkout's."""
+    errors = []
+    roles = m.get("roles")
+    agents_block = m.get("agents")
+    if not isinstance(roles, dict):
+        errors.append("map is missing a 'roles' object")
+        roles = {}
+    if not isinstance(agents_block, dict):
+        errors.append("map is missing an 'agents' object")
+        agents_block = {}
+
+    for role_name, role_def in roles.items():
+        model = role_def.get("model") if isinstance(role_def, dict) else None
+        if not isinstance(model, str) or not model.strip():
+            errors.append(f"role '{role_name}' has no non-empty 'model' scalar")
+
+    used_roles = set(agents_block.values())
+    for role in roles:
+        if role not in used_roles:
+            errors.append(f"role '{role}' is defined but assigned to no agent (orphan role)")
+    for agent_name, role in agents_block.items():
+        if role not in roles:
+            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
+
+    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
+    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
+    if min_agents is not None and len(discovered) < min_agents:
+        errors.append(
+            f"roster: {len(discovered)} agent file(s) found under "
+            f"{rel_or_abs(effective_agents_dir)}, --min-agents requires >= {min_agents}"
+        )
+    map_agents = set(agents_block.keys())
+    for missing in sorted(discovered - map_agents):
+        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
+    for extra in sorted(map_agents - discovered):
+        # Name the directory actually searched, not a hardcoded
+        # '.github/agents/' — under --agents-dir that literal would send the
+        # operator looking in the source checkout for a file missing from the
+        # *installed* tree (bob N9).
+        missing_path = effective_agents_dir / f"{extra}.agent.md"
+        errors.append(f"map assigns a role to '{extra}' but no {rel_or_abs(missing_path)} exists")
+
+    return errors
+
+
+def check_mozart_allowlist(agents_dir: Path = None) -> list:
+    """Roster self-consistency: mozart's 'agents:' allowlist must name exactly
+    the specialist files present on disk. It NEVER reads the map — it is a
+    property of the roster alone, which is why D-B.2 keeps it out of
+    validate_map_structure(). Returns a list of failure strings (empty == pass);
+    walks agents_dir (falling back to .github/agents/) so --agents-dir validates
+    the installed roster, not the source checkout's (the old hardcoded AGENTS_DIR
+    silently ignored the flag)."""
+    effective_agents_dir = agents_dir if agents_dir is not None else AGENTS_DIR
+    errors = []
+    mozart_file = effective_agents_dir / "mozart.agent.md"
+    if not mozart_file.exists():
+        return errors
+    discovered = {agent_stem(f) for f in discover_agent_files(agents_dir)}
+    r = validate_agent_file(mozart_file)
+    mozart_agents = set(r.data.get("agents") or [])
+    specialists = discovered - {"mozart"}
+    for a in sorted(specialists - mozart_agents):
+        errors.append(f"'{a}' is a specialist file but is missing from mozart's agents: allowlist")
+    for a in sorted(mozart_agents - specialists):
+        errors.append(f"mozart's agents: allowlist names '{a}', which is not a specialist file")
+    return errors
+
+
+# FORWARD-MAINTENANCE ITEM (R1). A static registry, deliberately not a live
+# provider-API probe: an API call would add a network dependency and a
+# credential to a CI job that has neither, to defend against a roster that
+# changes a few times a year.
+#
+# Consequence, accepted: a NEWLY ADDED model is rejected here until someone
+# edits this mapping. That is the cheap failure. The expensive failure — a
+# REMOVED model shipping to consumers as an undispatchable roster — is what
+# this exists to catch. But be honest about the bound: a stale registry catches
+# a harness-removed model ONLY if the maintainer actually prunes the dropped ID
+# from KNOWN_MODELS. A registry left stale in the more likely direction — the
+# maintainer forgot to prune, so a dead ID lingers as a still-"known" entry —
+# will FALSE-PASS that dead ID straight through the gate and reproduce the exact
+# R1 incident this exists to prevent. The gate is a forcing function for the
+# prune, not a substitute for it. (Verified live in this campaign's own stage 4:
+# xander, dexter and tessa hard-failed to launch against a since-removed ID and
+# needed manual overrides.)
+#
+# The family column is not decoration: it is what binds a model ID to its
+# real provider, so roles.<r>.family stops being an unverified author-supplied
+# label and D8's cross-family invariant becomes enforced rather than advisory.
+#
+# Source of truth: the model roster the harness advertises to `mozart` in its
+# subagent-dispatch tool documentation. Re-read it when bumping this mapping,
+# and bump `.github/mozart/VERSION` when you do.
+KNOWN_MODELS = {  # {model_id: family}
+    "claude-sonnet-5": "anthropic",
+    "claude-fable-5": "anthropic",
+    "claude-opus-5": "anthropic",
+    "claude-opus-4.8": "anthropic",
+    "claude-haiku-4.5": "anthropic",
+    "gpt-5.6-sol": "openai",
+    "gpt-5.6-terra": "openai",
+    "gpt-5.6-luna": "openai",
+    "gpt-5.3-codex": "openai",
+    "mai-code-1.1-flash": "microsoft",
+    "gemini-3.7-flash": "google",
+}
+
+
+def check_model_ids(m: dict) -> list:
+    """Live-model-ID allowlist gate (R1). Returns a list of failure strings
+    (empty == pass); order-stable (role-declaration order); NEVER raises.
+
+    Deliberately SEPARATE from validate_map_structure() (D-B.2's lesson: folding
+    a second invariant into a shared validator is how CI became unfixable). It
+    is safe to call from apply_models.py's preset loop where stamp drift was not,
+    because model-ID validity is ABSOLUTE, not preset-relative — every preset can
+    satisfy KNOWN_MODELS simultaneously, whereas a stamp matches at most one.
+
+    Two invariants, both over the parsed map only (in-process, pure compute):
+      1. every role's `model` and every present `fallback` is in KNOWN_MODELS;
+      2. every role's declared `family` matches KNOWN_MODELS[model] — this is
+         what turns D8 from a trusted free-text label into an enforced one
+         (xander L3). `fallback` family is deliberately NOT constrained: a
+         cross-family fallback is a legitimate degradation path when a provider
+         is down, not a violation of the independent-read guarantee D8 governs.
+
+    Not this function's concern (reporting it here would be the H4 double-report):
+    a role with no `model` key at all — that is validate_map_structure()'s
+    failure. A MISSING `fallback` is legal and silent; a PRESENT but dead one is
+    a failure. Every message names the offending value, not just the role, so an
+    operator can act without opening the file."""
+    errors = []
+    roles = m.get("roles")
+    if not isinstance(roles, dict):
+        return errors
+    for role_name, role_def in roles.items():
+        if not isinstance(role_def, dict):
+            continue
+        model = role_def.get("model")
+        if isinstance(model, str) and model.strip():
+            if model not in KNOWN_MODELS:
+                errors.append(
+                    f"role '{role_name}' model '{model}' is not a known dispatchable model ID "
+                    f"(not in KNOWN_MODELS — see the forward-maintenance note in check_agents.py)"
+                )
+            else:
+                declared = role_def.get("family")
+                if isinstance(declared, str) and declared.strip() and declared != KNOWN_MODELS[model]:
+                    errors.append(
+                        f"role '{role_name}' declares family '{declared}' but model '{model}' is "
+                        f"provided by '{KNOWN_MODELS[model]}' (D8 family binding)"
+                    )
+        fallback = role_def.get("fallback")
+        if isinstance(fallback, str) and fallback.strip() and fallback not in KNOWN_MODELS:
+            errors.append(
+                f"role '{role_name}' fallback '{fallback}' is not a known dispatchable model ID "
+                f"(not in KNOWN_MODELS)"
+            )
+    return errors
+
+
+def cmd_map(path_str: str, min_agents=None, agents_dir: Path = None) -> int:
     p = Path(path_str)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -742,64 +1037,17 @@ def cmd_map(path_str: str, min_agents=None) -> int:
         print(f"FAIL: could not parse {p} as JSONC: {e}")
         return 1
 
-    errors = []
-    roles = m.get("roles")
-    agents_block = m.get("agents")
-    if not isinstance(roles, dict):
-        errors.append("map is missing a 'roles' object")
-        roles = {}
-    if not isinstance(agents_block, dict):
-        errors.append("map is missing an 'agents' object")
-        agents_block = {}
-
-    used_roles = set(agents_block.values())
-    for role in roles:
-        if role not in used_roles:
-            errors.append(f"role '{role}' is defined but assigned to no agent (orphan role)")
-    for agent_name, role in agents_block.items():
-        if role not in roles:
-            errors.append(f"agent '{agent_name}' is assigned to undefined role '{role}'")
-
-    discovered = {agent_stem(f) for f in discover_agent_files()}
-    if min_agents is not None and len(discovered) < min_agents:
-        errors.append(
-            f"roster: {len(discovered)} agent file(s) found under .github/agents/, "
-            f"--min-agents requires >= {min_agents}"
-        )
-    map_agents = set(agents_block.keys())
-    for missing in sorted(discovered - map_agents):
-        errors.append(f"agent file '{missing}.agent.md' exists but has no entry in the map")
-    for extra in sorted(map_agents - discovered):
-        errors.append(f"map assigns a role to '{extra}' but no .github/agents/{extra}.agent.md exists")
-
-    for f in discover_agent_files():
-        stem = agent_stem(f)
-        role = agents_block.get(stem)
-        if role is None or role not in roles:
-            continue
-        r = validate_agent_file(f)
-        role_model = roles[role].get("model") if isinstance(roles[role], dict) else None
-        file_model = r.data.get("model")
-        if role_model is not None and file_model is not None and role_model != file_model:
-            errors.append(
-                f"'{stem}' is stamped model {file_model!r} but its role '{role}' maps to {role_model!r}"
-            )
-
-    mozart_file = AGENTS_DIR / "mozart.agent.md"
-    if mozart_file.exists():
-        r = validate_agent_file(mozart_file)
-        mozart_agents = set(r.data.get("agents") or [])
-        specialists = discovered - {"mozart"}
-        missing_from_allowlist = specialists - mozart_agents
-        extra_in_allowlist = mozart_agents - specialists
-        for a in sorted(missing_from_allowlist):
-            errors.append(f"'{a}' is a specialist file but is missing from mozart's agents: allowlist")
-        for a in sorted(extra_in_allowlist):
-            errors.append(f"mozart's agents: allowlist names '{a}', which is not a specialist file")
-
+    errors = validate_map_structure(m, agents_dir, min_agents)
+    errors += check_mozart_allowlist(agents_dir)
+    # check_model_ids is kept SEPARATE from validate_map_structure (D-B.2) but is
+    # safe to run here AND over apply_models.py's preset loop because model-ID
+    # validity is absolute, not preset-relative — unlike the stamp drift that was
+    # deleted from this function, every preset can satisfy KNOWN_MODELS at once.
+    errors += check_model_ids(m)
     for e in errors:
         print(f"FAIL: {e}")
     return 1 if errors else 0
+
 
 
 # --------------------------------------------------------------------------
@@ -907,7 +1155,11 @@ def _installed_ref_path(install_dir: Path, ref: str, layout: str) -> Path:
     return install_dir / ref[len(".github/"):]
 
 
-def cmd_check_install(dir_str: str, layout: str = "repo") -> int:
+def cmd_check_install(dir_str: str, layout: str = None) -> int:
+    # Parser default is None (P6/Y21, so an explicit --layout repo is
+    # distinguishable from no flag); the on-disk shapes only know 'repo'/'user'.
+    if layout is None:
+        layout = "repo"
     if not RUNTIME_READS_TSV.exists():
         print(f"NOTHING TO CHECK: {RUNTIME_READS_TSV.relative_to(REPO_ROOT)} not found — generated in Phase 5 (step 22)")
         return 2
@@ -973,7 +1225,7 @@ def cmd_check_install(dir_str: str, layout: str = "repo") -> int:
 # column must equal <N>.
 # --------------------------------------------------------------------------
 
-def cmd_check_carve(tsv_path_str: str) -> int:
+def cmd_check_carve(tsv_path_str: str, upstream_mozart_md=None) -> int:
     p = Path(tsv_path_str)
     if not p.is_absolute():
         p = REPO_ROOT / p
@@ -1046,25 +1298,27 @@ def cmd_check_carve(tsv_path_str: str) -> int:
             f"{UPSTREAM_CARVE_EXPECTED_CHARS}"
         )
 
-    # When the upstream source is present on disk, independently re-derive
+    # When the upstream source checkout is reachable, independently re-derive
     # its line count and character count (same convention: lines
     # UPSTREAM_CARVE_START_LINE-UPSTREAM_CARVE_END_LINE, each joined by '\n'
     # plus a trailing '\n', matching `sed -n '7,2400p' | wc -m`) and
     # cross-check that live measurement against the hardcoded constants too
     # — if upstream itself has drifted, this port's own carve assumption is
     # stale, and that should surface here rather than only in a wrong TSV.
-    if UPSTREAM_MOZART_MD.exists():
-        upstream_lines = UPSTREAM_MOZART_MD.read_text(encoding="utf-8").splitlines()
+    # upstream_mozart_md is the resolve_upstream_mozart_md() result: an
+    # explicit path, a $MOZART_UPSTREAM_CHECKOUT-derived path, or None (skip).
+    if upstream_mozart_md is not None and upstream_mozart_md.exists():
+        upstream_lines = upstream_mozart_md.read_text(encoding="utf-8").splitlines()
         if len(upstream_lines) != UPSTREAM_CARVE_END_LINE:
             errors.append(
-                f"{UPSTREAM_MOZART_MD} has {len(upstream_lines)} lines, not the hardcoded "
+                f"{upstream_mozart_md} has {len(upstream_lines)} lines, not the hardcoded "
                 f"{UPSTREAM_CARVE_END_LINE}"
             )
         else:
             measured = "\n".join(upstream_lines[UPSTREAM_CARVE_START_LINE - 1:UPSTREAM_CARVE_END_LINE]) + "\n"
             if len(measured) != UPSTREAM_CARVE_EXPECTED_CHARS:
                 errors.append(
-                    f"{UPSTREAM_MOZART_MD} lines {UPSTREAM_CARVE_START_LINE}-{UPSTREAM_CARVE_END_LINE} "
+                    f"{upstream_mozart_md} lines {UPSTREAM_CARVE_START_LINE}-{UPSTREAM_CARVE_END_LINE} "
                     f"measure {len(measured)} chars, not the hardcoded {UPSTREAM_CARVE_EXPECTED_CHARS}"
                 )
 
@@ -1156,44 +1410,246 @@ def build_parser():
         help="validate a runtime-reads.tsv is fresh (defaults to the committed tests/runtime-reads.tsv; "
              "pass a path to check a scratch copy instead, e.g. for a staleness bite test)",
     )
-    p.add_argument("--check-install", metavar="DIR", help="validate an installed bundle copy against the manifest")
+    p.add_argument(
+        "--check-install",
+        nargs="?",
+        const=".",
+        default=None,
+        metavar="DIR",
+        help="validate an installed bundle copy against the manifest (defaults to the current "
+             "repo '.', i.e. the repo-layout install of itself)",
+    )
     p.add_argument(
         "--layout",
         choices=INSTALL_LAYOUTS,
-        default="repo",
-        help="with --check-install: 'repo' (default, .github/agents + .github/mozart) or "
-             "'user' (agents/ + mozart/, the Copilot CLI user-scope shape)",
+        default=None,
+        help="with --check-install: 'repo' (default when omitted, .github/agents + .github/mozart) or "
+             "'user' (agents/ + mozart/, the Copilot CLI user-scope shape). Default is None so an "
+             "explicitly-supplied '--layout repo' is distinguishable from no flag (P6/Y21); "
+             "cmd_check_install treats None as 'repo'.",
     )
-    p.add_argument("--check-carve", metavar="TSV_PATH", help="validate a coverage-map.tsv is total")
+    p.add_argument(
+        "--check-carve",
+        nargs="?",
+        const="tests/coverage-map.tsv",
+        default=None,
+        metavar="TSV_PATH",
+        help="validate a coverage-map.tsv is total (defaults to tests/coverage-map.tsv)",
+    )
+    p.add_argument(
+        "--upstream-mozart-md",
+        metavar="PATH",
+        help="path to the upstream agents/mozart.md for the carve's live re-derivation cross-check "
+             "(meaningful only with --check-carve). Defaults to $MOZART_UPSTREAM_CHECKOUT/agents/mozart.md, "
+             "or is skipped when neither is set.",
+    )
     p.add_argument("--check-doc-table", action="store_true", help="validate docs/COPILOT_PORT.md against config/toolsets.jsonc")
+    p.add_argument(
+        "--agents-dir",
+        metavar="DIR",
+        help="validate against an installed agents directory (e.g. <copilot-home>/agents) instead of "
+             ".github/agents/. Consumed by --map only (roster coverage + mozart's allowlist); the modifier "
+             "matrix rejects it with every other action — --emit-runtime-reads (source-roster stream, Y20), "
+             "and --check-install / --check-carve, which derive their own target and never read it (Z7).",
+    )
     return p
 
 
+def validate_modifier_matrix(args) -> int:
+    """P6 modifier compatibility matrix. Reject a modifier flag supplied
+    alongside an action that does not consume it — rather than accepting and
+    silently discarding it, which is H1's twin (the campaign that exists to
+    kill silently-ignored flags must not reintroduce one). Runs after parsing,
+    before any dispatch. Returns 2 to reject, 0 to continue.
+
+    The matrix (modifier -> the actions that consume it):
+      --min-agents         -> --map, --check-install (and the default,
+                              no-action roster validate-all, which also reads it)
+      --layout             -> --check-install only
+      --upstream-mozart-md -> --check-carve only
+      --agents-dir         -> --map only
+
+    Z7 (found by jackson at P9, resolved here at P10): P6's original row
+    permitted --agents-dir with --check-install and --check-carve, but neither
+    action consumes it — --check-carve reads a coverage-map.tsv of upstream
+    mozart.md line ranges and never touches the roster, and --check-install
+    derives its agents directory from the install DIR + --layout
+    (_installed_agents_dir), so an external override would validate a *different*
+    roster than the install under test. A permitted-but-inert modifier is
+    exactly the H1 defect class this campaign exists to kill (documented-and-
+    ignored is a thin defence over silently-ignored). Resolution: NARROW the row
+    to --map, the sole genuine consumer, rather than manufacturing a semantics
+    for a flag two actions have no coherent use for. --agents-dir alongside
+    --check-install or --check-carve now rejects (exit 2), naming both flags.
+
+    Z5 (found by jackson at P6): before P9, --agents-dir was not a
+    check_agents.py flag, so argparse rejected --emit-runtime-reads --agents-dir
+    as an *unrecognized argument* (also exit 2). P9 adds the flag, so that
+    backstop is gone: --agents-dir alongside --emit-runtime-reads must now be
+    rejected by THIS matrix instead, or it would degrade from
+    "unrecognized" to "accepted-and-silently-ignored" — the exact defect this
+    matrix exists to kill. --emit-runtime-reads is deliberately absent from
+    --agents-dir's consumed_by list, so the enforce() below rejects the pair
+    (exit 2) with a message naming both flags."""
+    action_flags = {
+        "--self-test": bool(args.self_test),
+        "--file": bool(args.file),
+        "--map": bool(args.map),
+        "--emit-runtime-reads": bool(args.emit_runtime_reads),
+        "--check-doc-refs": bool(args.check_doc_refs),
+        "--check-install": bool(args.check_install),
+        "--check-carve": bool(args.check_carve),
+        "--check-doc-table": bool(args.check_doc_table),
+    }
+    active = {name for name, present in action_flags.items() if present}
+
+    def enforce(modifier, consumed_by, default_consumes) -> int:
+        if active & set(consumed_by):
+            return 0
+        if not active and default_consumes:
+            return 0
+        got = ", ".join(sorted(active)) if active else "no action"
+        print(
+            f"usage error: {modifier} is only meaningful with "
+            f"{' or '.join(consumed_by)}; got {got}"
+        )
+        return 2
+
+    if args.min_agents is not None:
+        rc = enforce("--min-agents", ["--map", "--check-install"], default_consumes=True)
+        if rc:
+            return rc
+    if args.layout is not None:
+        rc = enforce("--layout", ["--check-install"], default_consumes=False)
+        if rc:
+            return rc
+    if args.upstream_mozart_md is not None:
+        rc = enforce("--upstream-mozart-md", ["--check-carve"], default_consumes=False)
+        if rc:
+            return rc
+    if args.agents_dir is not None:
+        rc = enforce("--agents-dir", ["--map"], default_consumes=False)
+        if rc:
+            return rc
+    return 0
+
+
+def reduce_statuses(statuses) -> int:
+    """Reduce several action exit codes to one by fixed PRIORITY: 1 > 2 > 0.
+
+    A genuine failure (1) always surfaces, even when another action in the same
+    invocation returned a benign "nothing to check" (2); a 2 in turn outranks a
+    clean 0. This is check_agents.py's own vocabulary (cmd_map returns 2 for a
+    missing map file) — see main()'s docstring for why it has no counterpart in
+    apply_models.py."""
+    if 1 in statuses:
+        return 1
+    if 2 in statuses:
+        return 2
+    return 0
+
+
 def main(argv=None) -> int:
+    """Aggregating CLI dispatcher.
+
+    Every requested action is collected in parser-declaration order, ALL of
+    them run, and their exit codes are reduced by reduce_statuses() using a
+    fixed priority: 1 (real failure) outranks 2 (nothing-to-check / misuse)
+    outranks 0 (clean). This replaces the previous first-matching-flag-wins
+    chain, in which a second action flag was silently dropped — so a CI step
+    could pass while the check its author intended never ran (H1).
+
+    The priority rule is DELIBERATELY NOT shared with apply_models.py. The two
+    scripts speak different exit vocabularies: check_agents.py uses 0/1/2
+    (cmd_map returns 2 on a missing map file), apply_models.py is strictly 0/1.
+    Folding both under one reducer would force apply_models.py to reason about a
+    "2" it never emits. The rule is therefore new local logic, not convergence;
+    a shared dispatcher is deferred until a third caller earns the seam (W5).
+
+    --emit-runtime-reads is mutually exclusive with every other action (W7a):
+    its stdout is redirected verbatim into tests/runtime-reads.tsv, whose header
+    forbids hand edits, so interleaving any banner or diagnostic line into that
+    stream would silently corrupt the generated file. Combined with any other
+    action it exits 2 before anything runs, and when it is the sole action it
+    prints no banner so the TSV stays pristine."""
     args = build_parser().parse_args(argv)
 
     if args.forms and not args.self_test:
         print("usage error: --forms requires --self-test")
         return 2
 
-    if args.self_test:
-        return run_self_test(args.forms)
-    if args.file:
-        return cmd_file(args.file)
-    if args.map:
-        return cmd_map(args.map, args.min_agents)
+    # P6 modifier compatibility matrix — validated after parsing, before any
+    # dispatch, so an irrelevant modifier is rejected (exit 2) rather than
+    # silently discarded.
+    rc = validate_modifier_matrix(args)
+    if rc:
+        return rc
+
+    # --emit-runtime-reads exclusivity (W7a) — checked before any action runs.
     if args.emit_runtime_reads:
+        conflicts = [
+            name for name, present in (
+                ("--self-test", args.self_test),
+                ("--file", args.file),
+                ("--map", args.map),
+                ("--check-doc-refs", args.check_doc_refs),
+                ("--check-install", args.check_install),
+                ("--check-carve", args.check_carve),
+                ("--check-doc-table", args.check_doc_table),
+            ) if present
+        ]
+        if conflicts:
+            print(
+                "usage error: --emit-runtime-reads is mutually exclusive with "
+                f"{', '.join(conflicts)} — its stdout is consumed verbatim as "
+                "tests/runtime-reads.tsv and must not be interleaved with other output"
+            )
+            return 2
+        # Sole action: no banner, pristine TSV on stdout.
         return cmd_emit_runtime_reads()
+
+    # --agents-dir DIR overrides the roster the map checks walk (default
+    # .github/agents/). Resolved once here; only --map consumes it (roster
+    # coverage + mozart's allowlist). The modifier matrix (Z7) rejects it
+    # alongside --check-install and --check-carve, which derive their own
+    # target from their own flag value and never read this override.
+    resolved_agents_dir = None
+    if args.agents_dir is not None:
+        resolved_agents_dir = Path(args.agents_dir)
+        if not resolved_agents_dir.is_absolute():
+            resolved_agents_dir = REPO_ROOT / resolved_agents_dir
+
+    # Collect the requested actions in parser-declaration order. Each entry is
+    # (label, thunk); the label is printed as a banner so the aggregated output
+    # attributes each block of lines to the action that produced it.
+    actions = []
+    if args.self_test:
+        actions.append(("self-test", lambda: run_self_test(args.forms)))
+    if args.file:
+        actions.append(("file", lambda: cmd_file(args.file)))
+    if args.map:
+        actions.append(("map", lambda: cmd_map(args.map, args.min_agents, resolved_agents_dir)))
     if args.check_doc_refs:
-        path = None if args.check_doc_refs is True else args.check_doc_refs
-        return cmd_check_doc_refs(path)
+        doc_refs_path = None if args.check_doc_refs is True else args.check_doc_refs
+        actions.append(("check-doc-refs", lambda: cmd_check_doc_refs(doc_refs_path)))
     if args.check_install:
-        return cmd_check_install(args.check_install, args.layout)
+        actions.append(("check-install", lambda: cmd_check_install(args.check_install, args.layout)))
     if args.check_carve:
-        return cmd_check_carve(args.check_carve)
+        actions.append((
+            "check-carve",
+            lambda: cmd_check_carve(args.check_carve, resolve_upstream_mozart_md(args.upstream_mozart_md)),
+        ))
     if args.check_doc_table:
-        return cmd_check_doc_table()
-    return cmd_validate_all(args.min_agents)
+        actions.append(("check-doc-table", lambda: cmd_check_doc_table()))
+
+    if not actions:
+        return cmd_validate_all(args.min_agents)
+
+    statuses = []
+    for label, thunk in actions:
+        print(f"== {label} ==")
+        statuses.append(thunk())
+    return reduce_statuses(statuses)
 
 
 if __name__ == "__main__":

@@ -27,8 +27,10 @@ reads wins, and every file for that run is read from that one root — mixing
 roots (a manual from one, a model map from another) is a silent desync D7
 exists to prevent. If neither candidate's `VERSION` reads, an agent stops
 and names both rather than improvising. See `docs/COPILOT_PORT.md` for the
-full rationale, including the CLI wrapper's repo-root grant (D9) and the
-two-literal-path probe's documented limit (D10).
+full rationale, including the CLI wrapper's repo-root grant and the
+two-literal-path probe's documented limit — each agent resolves its bundle from
+exactly two fixed candidates (`.github/mozart` under the working directory, then
+`~/.copilot/mozart`), so a bundle installed anywhere else is never found.
 
 ## What lives here
 

@@ -93,6 +93,15 @@ emojis. No jokey lines.
   `apply_models.py --check-tiers` can verify the port didn't silently retier
   it
 
+## Decision IDs
+
+Design decisions carry a `D<n>` ID (`D1`, `D9b`, `D14`, ...). These IDs are
+**scoped to `docs/COPILOT_PORT.md`'s Decision registry** — that table is their
+one canonical definition. Cite a bare `(D9)` inline wherever it clarifies a
+choice; a reader resolves it against the registry. When you make a new port-level
+decision worth an ID, add its row to the registry in the same change — do not
+mint an ID that resolves nowhere.
+
 ## Local testing
 
 There is no compiled build. "Testing" means running the mechanical gates and
@@ -104,6 +113,14 @@ bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
 python3 scripts/check_agents.py --self-test
 python3 scripts/check_agents.py --min-agents <current roster size>
 ```
+
+`check_agents.py` runs every action flag you pass in one invocation and returns
+the highest-priority status (`1` > `2` > `0`); `--emit-runtime-reads` is
+mutually exclusive with all other actions. Modifier flags are accepted only with
+the actions that consume them — `--min-agents` with `--map`/`--check-install`,
+`--layout` with `--check-install`, `--upstream-mozart-md` with `--check-carve`,
+and `apply_models.py`'s `--upstream-readme` with `--check-tiers` — otherwise the
+run exits `2` naming both flags.
 
 If you changed a persona's output format, run it against a sample input and
 confirm the output matches the template. If you changed

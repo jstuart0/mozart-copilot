@@ -7,11 +7,11 @@
 **Context**: GREENFIELD
 **Mode**: AUTONOMOUS
 **Build-time flags**: none
-**Authoritative checkout**: /Users/jaystuart/dev/mozart-copilot
+**Authoritative checkout**: /Users/<username>/dev/repo
 **Current stage**: 5. Codex on plan — COMPLETE (per the checkbox below)
 
 ## Paths
-- Plan: /Users/jaystuart/dev/mozart-copilot/.mozart/plans/active/drifted-codex-legacy-fixture.md
+- Plan: /Users/<username>/dev/repo/.mozart/plans/active/drifted-codex-legacy-fixture.md
 - Codex r1 (plan): not yet run
 
 ## Stage progress

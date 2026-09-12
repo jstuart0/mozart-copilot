@@ -20,8 +20,9 @@ conductor body tells you when each one applies; this table is the map.
 | `manual/EVAL.md` (this directory) | The EVAL **pipeline procedure**: stages (scope → metrics → fix verification → sampling → synthesize → ledger) | Evaluating mozart's own field performance |
 | `TICKETS.md` | Ticket lifecycle: when tickets are created, project resolution, body/comment templates, lifecycle responsibilities | Any commit-producing or investigation-producing run, when ticketing is configured |
 
-Two files above `manual/` in the bundle, not listed in this table's rows
-because they aren't part of the manual carve, but cited constantly from
+This manual is 14 documents — this index plus the 13 in the table above.
+Four more files sit above `manual/` in the bundle, not listed in this table's
+rows because they aren't part of the manual carve, but cited constantly from
 inside it:
 
 - `.github/mozart/PIPELINE.md` — full stage-by-stage roster reference (agent

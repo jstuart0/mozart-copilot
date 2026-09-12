@@ -1,0 +1,43 @@
+// Negative fixture for check_agents.py --map / apply_models.py --validate-map.
+// New in P9: a full, otherwise-valid 22-agent map with EXACTLY ONE injected
+// defect — "percy" is assigned to the role "ghost-role", which is not defined
+// under "roles". This is the "undefined role" case: run against the real roster
+// it produces exactly one FAIL (agent assigned to undefined role) and nothing
+// else. percy still has a file and a map entry, so coverage is intact; the
+// "reviewers" role percy vacated is still assigned to other agents, so no
+// orphan role is introduced.
+{
+  "roles": {
+    "conductor": { "model": "claude-opus-5", "family": "anthropic", "fallback": "claude-sonnet-5" },
+    "deep-reviewers": { "model": "claude-opus-5", "family": "anthropic", "fallback": "claude-sonnet-5" },
+    "builders": { "model": "claude-sonnet-5", "family": "anthropic", "fallback": "claude-opus-4.8" },
+    "reviewers": { "model": "claude-sonnet-5", "family": "anthropic", "fallback": "claude-opus-4.8" },
+    "support": { "model": "claude-sonnet-5", "family": "anthropic", "fallback": "claude-opus-4.8" },
+    "fast-scan": { "model": "claude-haiku-4.5", "family": "anthropic", "fallback": "claude-sonnet-5" },
+    "validation": { "model": "gpt-5.6-sol", "family": "openai", "fallback": "gpt-5.6-terra" }
+  },
+  "agents": {
+    "mozart": "conductor",
+    "harry": "deep-reviewers",
+    "bob": "deep-reviewers",
+    "ruby": "deep-reviewers",
+    "valerie": "deep-reviewers",
+    "jackson": "builders",
+    "hank": "builders",
+    "scott": "builders",
+    "dexter": "reviewers",
+    "xander": "reviewers",
+    "otto": "reviewers",
+    "ian": "reviewers",
+    "tessa": "reviewers",
+    "percy": "ghost-role",
+    "librarian": "reviewers",
+    "dick": "reviewers",
+    "sarah": "reviewers",
+    "codebase-analyzer": "support",
+    "codebase-pattern-finder": "support",
+    "web-search-researcher": "support",
+    "codebase-locator": "fast-scan",
+    "sebastian": "validation"
+  }
+}

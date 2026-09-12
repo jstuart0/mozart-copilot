@@ -59,6 +59,19 @@ python3 scripts/check_agents.py --check-doc-table
 python3 scripts/check_agents.py --file .github/agents/<name>.agent.md
 ```
 
+`check_agents.py` is an **aggregating** dispatcher: pass several action flags in
+one invocation and it runs every one, returning the highest-priority status
+(a real failure `1` outranks a nothing-to-check `2` outranks a clean `0`).
+`--emit-runtime-reads` is the one exception — it is mutually exclusive with all
+other actions (its stdout is the generated `tests/runtime-reads.tsv`).
+
+Modifier flags are only accepted with the actions that consume them, otherwise
+the run exits `2` naming both flags: `--min-agents` with `--map`/`--check-install`
+(or the bare roster check), `--layout` with `--check-install` only, and
+`--upstream-mozart-md` with `--check-carve` only. The same rule governs
+`apply_models.py`'s `--upstream-readme`, which is meaningful only with
+`--check-tiers`.
+
 Once the model map exists (Phase 6): `python3 scripts/apply_models.py
 --check` (drift), `--check-families` (D8's cross-family invariant), and
 `--check-tiers` (upstream tier preservation).

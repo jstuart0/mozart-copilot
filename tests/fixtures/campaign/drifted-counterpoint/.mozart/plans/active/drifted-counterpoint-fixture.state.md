@@ -7,11 +7,11 @@
 **Context**: GREENFIELD
 **Mode**: AUTONOMOUS
 **Build-time flags**: none
-**Authoritative checkout**: /Users/jaystuart/dev/mozart-copilot
+**Authoritative checkout**: /Users/<username>/dev/repo
 **Current stage**: 5. Counterpoint on plan — COMPLETE (per the checkbox below)
 
 ## Paths
-- Plan: /Users/jaystuart/dev/mozart-copilot/.mozart/plans/active/drifted-counterpoint-fixture.md
+- Plan: /Users/<username>/dev/repo/.mozart/plans/active/drifted-counterpoint-fixture.md
 - Counterpoint r1 (plan): not yet run
 
 ## Stage progress

@@ -138,7 +138,7 @@ What NOT to do:
 
 ## Field notes (append-only)
 
-See the bundled `.github/mozart/LEARNINGS.md` for the protocol. Append cross-project patterns you discover here. **Do not edit any other section of this file** — those are human-authored contracts.
+See the bundled `.github/mozart/LEARNINGS.md` for the protocol. You hold neither `edit` nor `execute`, so you cannot append to this section yourself: return the proposed entry to mozart, who appends it on your behalf as a delegated append. **Do not edit any other section of this file** — those are human-authored contracts.
 
 Each entry follows the template in `.github/mozart/LEARNINGS.md`:
 

@@ -1,6 +1,6 @@
 # Field Notes Protocol — Self-Improvement for Agents
 
-Agents in this roster (mozart, harry, jackson, valerie, dick, dexter, xander, otto, ruby, bob, scott, librarian, hank, percy, tessa, sebastian) may improve themselves over time by appending to a `## Field notes (append-only)` section at the bottom of their own persona file. This document defines the protocol — what's allowed, what's forbidden, and the format every entry must follow.
+Every persona in this roster that carries a `## Field notes (append-only)` section may improve itself over time by appending entries to that section of its own persona file. This document defines the protocol — what's allowed, what's forbidden, and the format every entry must follow.
 
 The point is to capture cross-project patterns the agent discovers in practice, so future invocations benefit from accumulated experience. The protocol is intentionally constrained because a persona file is a contract: the human-authored sections define who the agent is, and the agent doesn't get to rewrite that.
 
@@ -102,7 +102,7 @@ cat >> "<path-to-your-persona-file>" <<'EOF'
 EOF
 ```
 
-Agents with neither `edit` nor `execute` (ian, sarah, sebastian, the codebase-* agents) cannot self-update. Instead, they include the proposed learning in their return message to mozart, who can write it on their behalf if it meets the criteria above. Mozart treats this as a delegated append, not a free hand to rewrite. **Sebastian never appends its own field notes even via delegation without the finding first being surfaced as a proposal** — the same discipline as everyone else, applied more conservatively given sebastian's read-only design.
+A persona whose grant includes neither `edit` nor `execute` cannot self-update: today that is bob, dexter, ian, librarian, sarah, sebastian, and xander. The codebase-* agents and `web-search-researcher` carry no field notes section at all. Instead, the grantless agents include the proposed learning in their return message to mozart, who can write it on their behalf if it meets the criteria above. Mozart treats this as a delegated append, not a free hand to rewrite. **Sebastian never appends its own field notes even via delegation without the finding first being surfaced as a proposal** — the same discipline as everyone else, applied more conservatively given sebastian's read-only design.
 
 ## Anti-patterns (things that have actually gone wrong with self-modifying systems)
 

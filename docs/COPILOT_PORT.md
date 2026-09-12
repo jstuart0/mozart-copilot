@@ -272,9 +272,9 @@ Nine rules, applied to every ported persona and every bundle document:
    parallel `execute` checks) in one turn — never subagent dispatch, since
    no specialist has the `agent` tool (D10). Mechanically substituting
    "subagent dispatch" into a persona with `agents: []` describes a
-   capability it doesn't have; `jackson.agent.md` shipped exactly that
-   mistranslation and was corrected in reconciliation round 1 (see
-   Implementation notes).
+   capability it doesn't have; `jackson.agent.md` and `harry.agent.md`
+   shipped exactly that mistranslation and were corrected in reconciliation
+   round 1 (see Implementation notes).
 5. **Frontmatter always explicit** — `tools:` never omitted, `model:` always
    a scalar string, `agents: []` on every specialist, `user-invocable: false`
    on every specialist.

@@ -8,6 +8,8 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-13
+
 ### Added — field-notes harvest: four prose entries, three mechanisms, ported from mozart-orchestration
 
 Four prose field notes ported byte-identical into `mozart.agent.md` (three: known-wrong facts in the

@@ -415,7 +415,8 @@ FIELD_NOTES_SELF_APPEND_RE = re.compile(r"Append cross-project (?:\w+ )?patterns
 FIELD_NOTES_DELEGATED_ANCHOR = "return the proposed entry to mozart, who appends it on your behalf as a delegated append"
 ARTIFACT_WRITE_VERB_RE = re.compile(
     r"\b(?:Write|write|writes|Save|save|saves|Append|append|appends|"
-    r"Author|author|authors|produce|produces)\b"
+    r"Author|author|authors|produce|produces|Persist|persist|persists|"
+    r"persisted|persisting)\b"
 )
 DISPATCH_INVOKES_YOU_RE = re.compile(r"\binvokes? you\b")
 WHO_CALLS_YOU_RE = re.compile(r"\*\*Who calls you\*\*:\s*(\S+)")
@@ -465,13 +466,28 @@ def find_capability_claim_violations(body_text: str, tools, description, stem: s
         violations.append(f"'{stem}' cites the `agent` tool but does not hold it in 'tools'")
 
     # V7c — a campaign-artifact write claim on a line lacking edit/execute.
+    # Subject-aware: the correct, repaired form of this contract has mozart
+    # persisting on a grantless persona's behalf ("mozart persists it to
+    # <canonical-checkout>/.mozart/..."), and that sentence still contains
+    # both the path token and a write verb. Only a claim whose sentence
+    # doesn't name mozart is self-attributed persistence — the actual
+    # violation. Sentence bounds are approximated the same way V7d
+    # approximates a dispatch clause: split on '.'/';' around the verb.
     if not persists:
         for line in body_text.splitlines():
-            if "<canonical-checkout>/.mozart/" in line and ARTIFACT_WRITE_VERB_RE.search(line):
+            if "<canonical-checkout>/.mozart/" not in line:
+                continue
+            for m in ARTIFACT_WRITE_VERB_RE.finditer(line):
+                before = re.split(r"[;.]", line[: m.start()])[-1]
+                after = re.split(r"[;.]", line[m.end():])[0]
+                sentence = f"{before}{line[m.start():m.end()]}{after}"
+                if "mozart" in sentence.lower():
+                    continue
                 violations.append(
                     f"'{stem}' claims a write to '<canonical-checkout>/.mozart/' but "
                     f"holds neither 'edit' nor 'execute': {line.strip()[:100]!r}"
                 )
+                break
 
     # V7d — non-mozart dispatch prose (D10's residue outside frontmatter,
     # which D10 itself cannot see — it inspects scalars only).
@@ -728,7 +744,7 @@ def validate_agent_file(path: Path) -> ValidationResult:
 REJECT_REASONS = {
     "invalid-agent-tool-claim-without-grant.agent.md": "cites the `agent` tool but does not hold it in 'tools'",
     "invalid-agent-tool-without-agents.agent.md": "'agent' is in 'tools' but frontmatter 'agents' is empty",
-    "invalid-artifact-write-without-persistence.agent.md": "claims a write to '<canonical-checkout>/.mozart/' but holds neither 'edit' nor 'execute'",
+    "invalid-artifact-write-without-persistence.agent.md": "holds neither 'edit' nor 'execute': 'Write your findings",
     "invalid-agents-without-agent-tool.agent.md": "frontmatter 'agents' is non-empty but 'agent' is not in 'tools'",
     "invalid-copilot-home-file-path.agent.md": "('$COPILOT_HOME/mozart/m')",
     "invalid-model-array.agent.md": "frontmatter 'model' is a YAML sequence, not a scalar string",
@@ -745,6 +761,7 @@ REJECT_REASONS = {
     "invalid-oversize-body.agent.md": "exceeds the 30000-char cap",
     "invalid-readonly-claim-with-grant.agent.md": "description contains an unqualified 'Read-only.' or 'Read-only;' terminator",
     "invalid-self-append-without-persistence.agent.md": "field notes: claims the self-append marker but holds neither 'edit' nor 'execute'",
+    "invalid-self-attributed-persist-claim.agent.md": "holds neither 'edit' nor 'execute': 'Persist your findings",
     "invalid-two-user-invocable.agent.md": "'user-invocable: true' is set, but only 'mozart' may be user-invocable",
     "invalid-unclosed-frontmatter.agent.md": "unclosed frontmatter: no closing '---' delimiter found",
     "invalid-unknown-tool.agent.md": "tools entry 'Bash' is not a member of config/toolsets.jsonc",

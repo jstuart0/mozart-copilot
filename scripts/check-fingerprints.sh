@@ -12,7 +12,7 @@
 # here; this file is small and code-reviewed.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-out="$(git grep -n -I -E 'jaystuart|/Users/[a-z]|/home/[a-z]|mozart-orchestration' -- . ':!.mozart' ':!scripts/check-fingerprints.sh')" && rc=0 || rc=$?
+out="$(git grep -n -I -E 'jaystuart|/Users/[a-z]|/home/[a-z]|mozart-(orchestration|local)' -- . ':!.mozart' ':!scripts/check-fingerprints.sh')" && rc=0 || rc=$?
 case "$rc" in
   0) printf 'FAIL: personal-infrastructure fingerprint(s) found:\n%s\n' "$out" >&2; exit 1 ;;
   1) echo "OK: no personal-infrastructure fingerprints"; exit 0 ;;

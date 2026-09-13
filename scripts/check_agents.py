@@ -466,22 +466,24 @@ def find_capability_claim_violations(body_text: str, tools, description, stem: s
         violations.append(f"'{stem}' cites the `agent` tool but does not hold it in 'tools'")
 
     # V7c — a campaign-artifact write claim on a line lacking edit/execute.
-    # Subject-aware: the correct, repaired form of this contract has mozart
-    # persisting on a grantless persona's behalf ("mozart persists it to
-    # <canonical-checkout>/.mozart/..."), and that sentence still contains
-    # both the path token and a write verb. Only a claim whose sentence
-    # doesn't name mozart is self-attributed persistence — the actual
-    # violation. Sentence bounds are approximated the same way V7d
-    # approximates a dispatch clause: split on '.'/';' around the verb.
+    # Subject-position-aware, not merely sentence-aware: testing the whole
+    # sentence for the substring "mozart" is too wide — "Write the brief...
+    # to mozart" names mozart as the RECIPIENT, and "...in mozart's brief"
+    # names mozart as a possessive modifier of the artifact, neither of
+    # which makes mozart the one doing the writing. Only mozart appearing
+    # immediately before the verb (allowing a short run of words, no
+    # intervening clause boundary) is mozart in subject position — the
+    # shape of the correct, repaired form ("mozart persists it to
+    # <canonical-checkout>/.mozart/..."). Everything else is a
+    # self-attributed persistence claim, which is the actual violation.
     if not persists:
+        mozart_subject_re = re.compile(r"\bmozart\b[^,;.]{0,30}$")
         for line in body_text.splitlines():
             if "<canonical-checkout>/.mozart/" not in line:
                 continue
             for m in ARTIFACT_WRITE_VERB_RE.finditer(line):
                 before = re.split(r"[;.]", line[: m.start()])[-1]
-                after = re.split(r"[;.]", line[m.end():])[0]
-                sentence = f"{before}{line[m.start():m.end()]}{after}"
-                if "mozart" in sentence.lower():
+                if mozart_subject_re.search(before.lower()):
                     continue
                 violations.append(
                     f"'{stem}' claims a write to '<canonical-checkout>/.mozart/' but "
@@ -744,6 +746,7 @@ def validate_agent_file(path: Path) -> ValidationResult:
 REJECT_REASONS = {
     "invalid-agent-tool-claim-without-grant.agent.md": "cites the `agent` tool but does not hold it in 'tools'",
     "invalid-agent-tool-without-agents.agent.md": "'agent' is in 'tools' but frontmatter 'agents' is empty",
+    "invalid-artifact-write-mozart-as-recipient.agent.md": "Save your findings to the absolute path in mozart's brief",
     "invalid-artifact-write-without-persistence.agent.md": "holds neither 'edit' nor 'execute': 'Write your findings",
     "invalid-agents-without-agent-tool.agent.md": "frontmatter 'agents' is non-empty but 'agent' is not in 'tools'",
     "invalid-copilot-home-file-path.agent.md": "('$COPILOT_HOME/mozart/m')",

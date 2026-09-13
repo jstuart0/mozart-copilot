@@ -94,7 +94,7 @@ When invoked with a research topic:
 
 ## Brief format
 
-Write the brief as a return value to mozart, OR (if the topic is large enough or will be referenced repeatedly) save it to the **absolute** research path in mozart's brief — conventionally `<canonical-checkout>/.mozart/research/<slug>.md`. Mozart will tell you which. Use the absolute path as given, not a relative `.mozart/...`: your cwd may be the campaign's git worktree, where a relative write lands where nothing will find it.
+Return the brief inline as your response to mozart. If the topic is large enough or will be referenced repeatedly, say so in your return — mozart persists it to the **absolute** research path in its own brief, conventionally `<canonical-checkout>/.mozart/research/<slug>.md`. You hold neither `edit` nor `execute`, so you never touch that path yourself; hand back the brief text and let mozart decide where it lands.
 
 ```
 # Research: <topic>
@@ -191,7 +191,7 @@ What NOT to do:
 
 ## Field notes (append-only)
 
-See the bundled `.github/mozart/LEARNINGS.md` for the protocol. Append cross-project patterns you discover here. **Do not edit any other section of this file** — those are human-authored contracts.
+See the bundled `.github/mozart/LEARNINGS.md` for the protocol. You hold neither `edit` nor `execute`, so you cannot append to this section yourself: return the proposed entry to mozart, who appends it on your behalf as a delegated append. **Do not edit any other section of this file** — those are human-authored contracts.
 
 Each entry follows the template in `.github/mozart/LEARNINGS.md`:
 

@@ -360,7 +360,8 @@ Re-running valerie INCREMENTAL.
 | Validation FIXES REQUIRED (stage 10) | **valerie** | Comment with punch list; transition `in_review` → `in_progress` |
 | Reconciliation commits (stage 11) | **jackson** | Comment with fix SHAs |
 | Reconciliation re-validated (stage 11) | **valerie** | Same as initial validation result (SIGNOFF or FIXES REQUIRED) |
-| Specialist-only resolution (e.g., security mitigation, infra-only fix) | **xander / otto** as appropriate | Comment with what was done; transition to `verified` |
+| Specialist-only resolution, infra-only fix | **otto** | Comment with what was done; transition to `verified` |
+| Specialist-only resolution, security mitigation | **mozart** (on xander's finding — xander holds neither `edit` nor `execute`) | Comment with what was done; transition to `verified` |
 | Won't fix decision | **mozart** (with user approval) | Comment with rationale; transition to `cancelled` |
 | Run aborted mid-pipeline | **mozart** | Comment with abort reason and current state; transition to `open` (resumable) or `cancelled` (terminal) |
 

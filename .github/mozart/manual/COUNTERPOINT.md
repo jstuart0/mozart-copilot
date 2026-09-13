@@ -142,8 +142,8 @@ Short-circuit if internal reviewers + sebastian are all clean (no
 Critical/High). Otherwise, brief the live harry again if the harness's
 continuation preserves context (see `.github/mozart/manual/FLOWS.md`);
 brief-from-artifacts otherwise. Re-run sebastian only if the revisions are
-substantive — writes `<slug>.counterpoint-r1b-plan.md`, etc. Cap: 3 rounds,
-same as every iteration cap in this pipeline.
+substantive — mozart writes `<slug>.counterpoint-r1b-plan.md`, etc. Cap: 3
+rounds, same as every iteration cap in this pipeline.
 
 ## What was deliberately deleted, and why
 

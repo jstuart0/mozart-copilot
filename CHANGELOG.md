@@ -6,6 +6,134 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 once it reaches `1.0.0`. Before that, `0.x` releases may include breaking changes.
 
+## [Unreleased]
+
+### Added — field-notes harvest: four prose entries, three mechanisms, ported from mozart-orchestration
+
+Four prose field notes ported byte-identical into `mozart.agent.md` (three: known-wrong facts in the
+brief, scope empirical findings to platform/version/date, an unattended run needs a decision log) and
+`jackson.agent.md` (one: mutation testing finds missing tests, not weak ones). Three related findings
+land as **mechanisms** rather than prose — the family's 2026-09-12 campaigns showed prose contracts
+inside a persona don't reliably change behavior: M2 (verify the measuring instrument at a known-FAIL
+base before trusting it) and M7 (a population floor and a named member on every counting/globbed
+check) join `harry.agent.md`'s Verification rules; M4 (name the pre-revision sections a mechanism
+touches, in the revision message) joins `.github/mozart/manual/DELIVER.md`'s stage-6 Iterate
+procedure, with a 93-char requirement pointing at it from `mozart.agent.md`'s Orchestration
+discipline section (chosen over inlining the full M4 text there, which would have cost 721 chars —
+75% of the then-remaining headroom to the 30,000-char hard cap — and put two copies of one rule in
+one port).
+
+**Measured against the hard cap** (`check_agents.py:101-102`, documented at `docs/COPILOT_PORT.md:559`):
+`mozart.agent.md` is now **29,137 chars — 863 chars of headroom, WARN band, not FAIL.**
+`harry.agent.md` is **27,567 chars**. The straight seven-entry prose port (no mechanism split) would
+have put `mozart.agent.md` at 32,180 chars and broken this port's CI outright; the mechanism/prose
+split is what makes this fit. **Residual is roughly one more mozart field note, ever** — the rule at
+that ceiling: never compact existing entries to make room; ask first whether a new finding should be
+a mechanism instead; if it must be prose and does not fit, refuse the append in all three ports rather
+than let copilot alone diverge.
+
+- **`scripts/check-fingerprints.sh`** — narrowed the fingerprint grep back down. It still matches a
+  hardcoded personal username and absolute personal home paths (`/Users/[a-z]`, `/home/[a-z]`), plus
+  the unpublished sibling port, by name — none of those three reproduced literally in this bullet,
+  because each is exactly what the pattern catches, and spelling them out here would trip the check
+  this bullet describes. It no longer matches `mozart-orchestration`: this port's published public
+  upstream is ordinary provenance, not personal infrastructure, and never should have been in the
+  pattern. No path was blacklisted; the property the pattern tests for was narrowed instead, per the
+  script's own SCOPE comment. Found this way: an earlier draft of this bullet described widening the
+  pattern from `mozart-orchestration` to a `(orchestration|local)` alternation and, in prose, named
+  the personal username and the sibling port directly to explain why — which the widened pattern then
+  caught, correctly, in this very file.
+- A pre-existing hardcoded carve (`check_agents.py:71-73`, `agents/mozart.md` expected at 2400 lines)
+  is **already red at base** and env-gated (`MOZART_UPSTREAM_CHECKOUT` unset ⇒ skipped, no CI impact).
+  This change widens the drift from 2,437 to 2,470 lines against the unchanged 2,400 constant. Not
+  repaired here — out of scope, measured and disclosed per this campaign's plan.
+- Cross-port agreement (this port, `mozart-orchestration`, `mozart-codex`) is verified pre-merge with
+  `scripts/check-field-note-parity.py`, run by hand across all three worktrees; not CI-wired, since no
+  port's CI can see the other two checkouts.
+
+Capability-vs-claim parity: every persona and bundled-doc contract in this port
+now promises only actions its `tools:` grant (or the port's mozart-only
+dispatch policy, D10) can actually perform, checked in both directions —
+overclaiming a capability the grant doesn't have, and understating one it
+does.
+
+### Fixed
+
+- **22 sites where a contract's prose disagreed with its `tools:` grant.** The
+  7 grantless personas' (`bob`, `dexter`, `ian`, `librarian`, `sarah`,
+  `sebastian`, `xander`) field-notes self-append blocks now route the append
+  through mozart instead of claiming it directly; `harry`'s Design-It-Twice
+  section and three support agents' (`codebase-locator`,
+  `codebase-pattern-finder`, `web-search-researcher`) "who calls you" prose no
+  longer claim non-mozart dispatch, matching `PIPELINE.md`'s "Requested for"
+  column (renamed from "Used by"); `sarah`'s research brief and mozart's edit
+  allowlist are reconciled so mozart, holding the grant, is the one who
+  persists it; `otto` and `dick`'s bare `"Read-only."` descriptions are
+  qualified against the write/ticket actions their bodies already assign
+  them; and `manual/TICKETS.md` / `manual/WORKTREES.md` no longer assign a
+  ticket transition or an artifact write to `xander`, `sarah`, or
+  `sebastian`, none of whom hold `edit` or `execute`. No `tools:` or `agents:`
+  grant changed anywhere in the repair — every fix is prose.
+- `LEARNINGS.md`'s field-notes roster no longer enumerates names — it
+  previously disagreed with itself on whether `sebastian` could self-update
+  and omitted `ian`/`sarah` entirely. It now states the rule by grant instead
+  of by a hand-maintained list, so it can't drift the same way again.
+- Two further contradictions of the same shape, found outside the campaign's
+  own matrix while checking the surrounding docs: `PIPELINE.md`'s stage list
+  drew sebastian's counterpoint review as if the arrow to its output path were
+  sebastian's own write, and `manual/COUNTERPOINT.md` elided the subject of
+  "writes `<slug>.counterpoint-r1b-plan.md`" the same way `DELIVER.md:128` did
+  before this campaign fixed that instance. Both now name mozart as the
+  writer.
+
+### Added
+
+- **A capability-vs-claim drift guard in `scripts/check_agents.py`**
+  (`find_capability_claim_violations`, rules V7a-e), run in CI via
+  `--self-test --forms` and `--min-agents 22`, with seven new negative
+  fixtures under `tests/fixtures/`: a persona claiming the field-notes
+  self-append marker without the grant to back it, citing the `agent` tool
+  without holding it, claiming non-mozart dispatch, claiming a
+  campaign-artifact write without `edit`/`execute` (including the
+  self-attributed and mozart-as-recipient variants), or carrying an
+  unqualified `"Read-only."` description while holding `edit`/`execute`. The
+  artifact-write rule (V7c) is subject-position aware, not merely
+  sentence-aware: it distinguishes "mozart persists it to `<path>`" (exempt)
+  from "in mozart's brief" or "to mozart" (mozart named, but as the recipient
+  or the document, not the writer — still a violation).
+
+### Known limitations
+
+- **The drift guard covers only references that name a grantless persona.**
+  It's exact and closed over `.github/mozart/**` for that population — 233
+  lines enumerated, 32 carrying a persistence verb, all 32 adjudicated by
+  hand, 6 true positives, 0 remaining. A pronoun or role noun ("the
+  researcher") naming the same persona indirectly is invisible to it, and no
+  sweep this campaign could construct closes that gap; its own 10-phrase
+  role-noun probe was disqualified as hand-built vocabulary, the same
+  instrument the gap disqualifies.
+- **The population-pin gate (`C10b` in the campaign's own verification
+  runner) is a count, not a detector.** It fails whenever the number of
+  (grantless-persona-name, persistence-verb) lines changes in either
+  direction, forcing a human to adjudicate the new member — it doesn't
+  recognize the defect itself. Its baseline is also non-portable across
+  independently-worded repairs of the same defects: the plan predicted 36
+  entries, the shipped tree measured 31, from correct repairs phrased
+  differently than the plan's own scratch wording. Re-derive it fresh next
+  time; don't reuse this number.
+- **`LEARNINGS.md:3` can no longer go stale; `:105` still can.** `:3` now
+  describes the rule generically; `:105` still names the same 7 personas as
+  a worked example, pinned only by a gate that lives outside this repo in a
+  gitignored verification runner.
+- **Only 4 of the campaign's 12 verification gates have a CI home** — the
+  ones folded into `check_agents.py` above. The other 8, including the
+  population pin, exist only in that gitignored runner and are hand-run, not
+  enforced on every push.
+- **The field-notes guard (V7a) doesn't catch a deleted `## Field notes
+  (append-only)` section**, only a malformed one — the section heading is
+  also the rule's own trigger. (The implementation plan claimed it "fails on
+  deletion"; it doesn't.)
+
 ## [0.3.0] - 2026-09-02
 
 OSS-readiness hardening: the campaign removes personal-infrastructure

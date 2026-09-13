@@ -404,6 +404,124 @@ def find_outside_bundle_violations(body_text: str):
 
 
 # --------------------------------------------------------------------------
+# Capability-vs-claim (D-B / Phase 7 drift guard). A sibling to
+# find_outside_bundle_violations, not a merge into it — path policy and
+# capability are orthogonal contracts, and folding them into one error list
+# would couple two independent failure modes (librarian, stage 4).
+# --------------------------------------------------------------------------
+
+FIELD_NOTES_SECTION_HEADING = "## Field notes (append-only)"
+FIELD_NOTES_SELF_APPEND_RE = re.compile(r"Append cross-project (?:\w+ )?patterns you discover here")
+FIELD_NOTES_DELEGATED_ANCHOR = "return the proposed entry to mozart, who appends it on your behalf as a delegated append"
+ARTIFACT_WRITE_VERB_RE = re.compile(
+    r"\b(?:Write|write|writes|Save|save|saves|Append|append|appends|"
+    r"Author|author|authors|produce|produces|Persist|persist|persists|"
+    r"persisted|persisting)\b"
+)
+DISPATCH_INVOKES_YOU_RE = re.compile(r"\binvokes? you\b")
+WHO_CALLS_YOU_RE = re.compile(r"\*\*Who calls you\*\*:\s*(\S+)")
+
+
+def find_capability_claim_violations(body_text: str, tools, description, stem: str):
+    """Every prose claim of self-persistence, dispatch, or an unqualified
+    read-only posture must match what `tools` and D10 can actually do.
+
+    Dependency category: in-process, unchanged — `description` is
+    already-parsed frontmatter the caller already holds; no I/O, no roster
+    parameter, no filesystem glob. V7d in particular is intentionally
+    roster-free (H3): the clause-omits-mozart check alone finds the same
+    violations as a roster-aware version, at base and on a repaired tree.
+    """
+    violations = []
+    persists = bool(tools) and bool({"edit", "execute"} & set(tools))
+
+    # V7a — field-notes marker, specified as a partition (M2), not a
+    # prohibition: a persona with the section must carry exactly one of the
+    # self-append marker or the delegated-append anchor, and which one is
+    # determined by its grant. A prohibition-only rule goes silent on drift
+    # in either direction, on deletion, or on a mis-classed persona — this
+    # has already happened once in this tree (tessa's one-word variant),
+    # which is why the marker is a tolerant regex rather than an exact string.
+    if FIELD_NOTES_SECTION_HEADING in body_text:
+        has_self = bool(FIELD_NOTES_SELF_APPEND_RE.search(body_text))
+        has_deleg = FIELD_NOTES_DELEGATED_ANCHOR in body_text
+        if has_self and not persists:
+            violations.append(
+                f"'{stem}' field notes: claims the self-append marker but holds "
+                "neither 'edit' nor 'execute'"
+            )
+        elif has_deleg and persists:
+            violations.append(
+                f"'{stem}' field notes: routes the append through mozart as delegated, "
+                "but holds 'edit' or 'execute' and could append directly"
+            )
+        elif not has_self and not has_deleg:
+            violations.append(
+                f"'{stem}' field notes: neither the self-append marker nor the "
+                "delegated-append anchor is present"
+            )
+
+    # V7b — citing the `agent` tool in prose without holding it.
+    if "`agent` tool" in body_text and not (tools and "agent" in tools):
+        violations.append(f"'{stem}' cites the `agent` tool but does not hold it in 'tools'")
+
+    # V7c — a campaign-artifact write claim on a line lacking edit/execute.
+    # Subject-position-aware, not merely sentence-aware: testing the whole
+    # sentence for the substring "mozart" is too wide — "Write the brief...
+    # to mozart" names mozart as the RECIPIENT, and "...in mozart's brief"
+    # names mozart as a possessive modifier of the artifact, neither of
+    # which makes mozart the one doing the writing. Only mozart appearing
+    # immediately before the verb (allowing a short run of words, no
+    # intervening clause boundary) is mozart in subject position — the
+    # shape of the correct, repaired form ("mozart persists it to
+    # <canonical-checkout>/.mozart/..."). Everything else is a
+    # self-attributed persistence claim, which is the actual violation.
+    if not persists:
+        mozart_subject_re = re.compile(r"\bmozart\b[^,;.]{0,30}$")
+        for line in body_text.splitlines():
+            if "<canonical-checkout>/.mozart/" not in line:
+                continue
+            for m in ARTIFACT_WRITE_VERB_RE.finditer(line):
+                before = re.split(r"[;.]", line[: m.start()])[-1]
+                if mozart_subject_re.search(before.lower()):
+                    continue
+                violations.append(
+                    f"'{stem}' claims a write to '<canonical-checkout>/.mozart/' but "
+                    f"holds neither 'edit' nor 'execute': {line.strip()[:100]!r}"
+                )
+                break
+
+    # V7d — non-mozart dispatch prose (D10's residue outside frontmatter,
+    # which D10 itself cannot see — it inspects scalars only).
+    for line in body_text.splitlines():
+        for m in DISPATCH_INVOKES_YOU_RE.finditer(line):
+            clause = re.split(r"[;.]", line[: m.start()])[-1].lower()
+            if "mozart" not in clause:
+                violations.append(
+                    f"'{stem}' dispatch prose omits 'mozart' in the clause before "
+                    f"'invokes you': {line.strip()[:100]!r}"
+                )
+        w = WHO_CALLS_YOU_RE.search(line)
+        if w and w.group(1).strip("*`,.") != "mozart":
+            violations.append(
+                f"'{stem}' 'Who calls you' names a non-mozart dispatcher as the "
+                f"first token: {line.strip()[:100]!r}"
+            )
+
+    # V7e — an unqualified "Read-only" terminator on a persona that persists.
+    # Inverted relative to V7a/V7c: fires when the persona DOES hold edit or
+    # execute. Ceiling: catches the two terminators in use today, not a
+    # newly-invented unqualified phrasing.
+    if description and persists and ("Read-only." in description or "Read-only;" in description):
+        violations.append(
+            f"'{stem}' description contains an unqualified 'Read-only.' or "
+            "'Read-only;' terminator, but this persona holds 'edit' or 'execute'"
+        )
+
+    return violations
+
+
+# --------------------------------------------------------------------------
 # Single-file validation.
 # --------------------------------------------------------------------------
 
@@ -604,6 +722,10 @@ def validate_agent_file(path: Path) -> ValidationResult:
     for v in find_outside_bundle_violations(body_text):
         errors.append(v)
 
+    # prose promises only what 'tools' and D10 can actually perform
+    for v in find_capability_claim_violations(body_text, tools, description, stem):
+        errors.append(v)
+
     result.ok = len(errors) == 0
     return result
 
@@ -622,7 +744,10 @@ def validate_agent_file(path: Path) -> ValidationResult:
 # row here fails the self-test — you cannot ship a negative fixture without
 # declaring why it must be rejected.
 REJECT_REASONS = {
+    "invalid-agent-tool-claim-without-grant.agent.md": "cites the `agent` tool but does not hold it in 'tools'",
     "invalid-agent-tool-without-agents.agent.md": "'agent' is in 'tools' but frontmatter 'agents' is empty",
+    "invalid-artifact-write-mozart-as-recipient.agent.md": "Save your findings to the absolute path in mozart's brief",
+    "invalid-artifact-write-without-persistence.agent.md": "holds neither 'edit' nor 'execute': 'Write your findings",
     "invalid-agents-without-agent-tool.agent.md": "frontmatter 'agents' is non-empty but 'agent' is not in 'tools'",
     "invalid-copilot-home-file-path.agent.md": "('$COPILOT_HOME/mozart/m')",
     "invalid-model-array.agent.md": "frontmatter 'model' is a YAML sequence, not a scalar string",
@@ -634,8 +759,12 @@ REJECT_REASONS = {
     "invalid-no-name.agent.md": "frontmatter 'name' is missing or empty",
     "invalid-no-tools.agent.md": "frontmatter 'tools' is missing",
     "invalid-non-mozart-dispatch-authority.agent.md": "'invalid-non-mozart-dispatch-authority' holds the 'agent' tool",
+    "invalid-non-mozart-dispatch-prose.agent.md": "dispatch prose omits 'mozart' in the clause before 'invokes you'",
     "invalid-outside-bundle-read.agent.md": "references 'PIPELINE.md' without the '.github/mozart/' bundle prefix",
     "invalid-oversize-body.agent.md": "exceeds the 30000-char cap",
+    "invalid-readonly-claim-with-grant.agent.md": "description contains an unqualified 'Read-only.' or 'Read-only;' terminator",
+    "invalid-self-append-without-persistence.agent.md": "field notes: claims the self-append marker but holds neither 'edit' nor 'execute'",
+    "invalid-self-attributed-persist-claim.agent.md": "holds neither 'edit' nor 'execute': 'Persist your findings",
     "invalid-two-user-invocable.agent.md": "'user-invocable: true' is set, but only 'mozart' may be user-invocable",
     "invalid-unclosed-frontmatter.agent.md": "unclosed frontmatter: no closing '---' delimiter found",
     "invalid-unknown-tool.agent.md": "tools entry 'Bash' is not a member of config/toolsets.jsonc",

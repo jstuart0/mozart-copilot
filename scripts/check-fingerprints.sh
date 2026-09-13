@@ -10,9 +10,14 @@
 # red. Excluding the guard from itself is idiomatic (mirrors ':!.mozart').
 # Accepted residual: a personal path added *inside this file* is not caught
 # here; this file is small and code-reviewed.
+# SCOPE (field-notes harvest, 2026-09-13): 'mozart-orchestration' is NOT in
+# this pattern. It is this port's published public upstream -- ordinary
+# provenance, not personal infrastructure -- and naming it in prose (a
+# changelog, a doc) is not a fingerprint. 'mozart-local' stays: it is an
+# unpublished, personal sibling port. Widen deliberately, never silently.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-out="$(git grep -n -I -E 'jaystuart|/Users/[a-z]|/home/[a-z]|mozart-orchestration' -- . ':!.mozart' ':!scripts/check-fingerprints.sh')" && rc=0 || rc=$?
+out="$(git grep -n -I -E 'jaystuart|/Users/[a-z]|/home/[a-z]|mozart-local' -- . ':!.mozart' ':!scripts/check-fingerprints.sh')" && rc=0 || rc=$?
 case "$rc" in
   0) printf 'FAIL: personal-infrastructure fingerprint(s) found:\n%s\n' "$out" >&2; exit 1 ;;
   1) echo "OK: no personal-infrastructure fingerprints"; exit 0 ;;

@@ -274,7 +274,15 @@ Nine rules, applied to every ported persona and every bundle document:
    "subagent dispatch" into a persona with `agents: []` describes a
    capability it doesn't have; `jackson.agent.md` shipped exactly that
    mistranslation and was corrected in reconciliation round 1 (see
-   Implementation notes).
+   Implementation notes). `harry.agent.md`'s Design-It-Twice section
+   carried the same mistranslation — missed by rule 4's own application at
+   port time — and was found and corrected separately by the
+   capability-vs-claim parity campaign (2026-09-12), which also added a
+   mechanical CI guard for this rule (`find_capability_claim_violations`,
+   `scripts/check_agents.py` — a sibling of `find_outside_bundle_violations`,
+   the existing bundle-path prose scanner) so a future mistranslation of
+   this shape fails `--self-test --forms` instead of shipping silently a
+   third time.
 5. **Frontmatter always explicit** — `tools:` never omitted, `model:` always
    a scalar string, `agents: []` on every specialist, `user-invocable: false`
    on every specialist.

@@ -55,15 +55,16 @@ When mozart briefs another agent, it carries this standard forward — it does n
 
 Support agents — real `.github/agents/*.agent.md` personas, part of the
 22-agent roster, but tool specialists rather than pipeline-stage reviewers
-(no fixed stage number of their own; used on demand by the agents in the
-"Used by" column):
+(no fixed stage number of their own; requested during the pipeline stages
+named in the "Requested for" column below, always invoked via mozart, the
+only agent this roster grants dispatch authority (D10)):
 
-| Agent | Model role (map) | Used by |
+| Agent | Model role (map) | Requested for |
 |---|---|---|
-| codebase-locator | fast-scan | sarah, librarian |
-| codebase-analyzer | support | sarah, dick, ian |
-| codebase-pattern-finder | support | sarah, librarian |
-| web-search-researcher | support | sarah |
+| codebase-locator | fast-scan | research, prior-art survey |
+| codebase-analyzer | support | research, diagnosis, change-impact analysis |
+| codebase-pattern-finder | support | research, prior-art survey, pre-implementation pattern lookup |
+| web-search-researcher | support | research (external/web) |
 
 The literal model IDs stamped per role live in `.github/mozart/config/model-map.jsonc` — this table records the role assignment, not a specific model string, so it doesn't go stale when the map is re-stamped or a preset changes.
 
@@ -75,7 +76,7 @@ The literal model IDs stamped per role live in `.github/mozart/config/model-map.
 2.  Research        — sarah (+ codebase-pattern-finder, web-search-researcher) in parallel — OPTIONAL, skipped in TINY
 3.  Plan            — harry drafts → .mozart/plans/<slug>.md
 4.  Internal review — bob (always) + librarian (BROWNFIELD) + xander/dexter/ruby/otto/tessa/percy (conditional, parallel)
-5.  Counterpoint on plan — sebastian's cross-model review → <slug>.counterpoint-r1-plan.md
+5.  Counterpoint on plan — sebastian's cross-model review; mozart persists it (sebastian holds neither `edit` nor `execute`) → <slug>.counterpoint-r1-plan.md
 6.  Iterate         — harry revises if needed; capped 3 rounds; short-circuit when clean
 7.  Implement       — jackson, phase by phase (parallel streams when independent)
 8.  Mid-build gate  — mozart per-phase gate + conditional specialists (librarian / ian / xander / otto / ruby / dexter / tessa / percy / bob)

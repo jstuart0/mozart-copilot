@@ -32,10 +32,17 @@ that ceiling: never compact existing entries to make room; ask first whether a n
 a mechanism instead; if it must be prose and does not fit, refuse the append in all three ports rather
 than let copilot alone diverge.
 
-- **`scripts/check-fingerprints.sh`** — widened the fingerprint grep from `mozart-orchestration` to
-  `mozart-(orchestration|local)`. The prior pattern could not catch a `mozart-local` host reference at
-  all (verified: the bare string does not match `jaystuart|/Users/[a-z]|/home/[a-z]|mozart-orchestration`);
-  the field notes' provenance text cites a local-model port of this pipeline and needed the wider net.
+- **`scripts/check-fingerprints.sh`** — narrowed the fingerprint grep back down. It still matches a
+  hardcoded personal username and absolute personal home paths (`/Users/[a-z]`, `/home/[a-z]`), plus
+  the unpublished sibling port, by name — none of those three reproduced literally in this bullet,
+  because each is exactly what the pattern catches, and spelling them out here would trip the check
+  this bullet describes. It no longer matches `mozart-orchestration`: this port's published public
+  upstream is ordinary provenance, not personal infrastructure, and never should have been in the
+  pattern. No path was blacklisted; the property the pattern tests for was narrowed instead, per the
+  script's own SCOPE comment. Found this way: an earlier draft of this bullet described widening the
+  pattern from `mozart-orchestration` to a `(orchestration|local)` alternation and, in prose, named
+  the personal username and the sibling port directly to explain why — which the widened pattern then
+  caught, correctly, in this very file.
 - A pre-existing hardcoded carve (`check_agents.py:71-73`, `agents/mozart.md` expected at 2400 lines)
   is **already red at base** and env-gated (`MOZART_UPSTREAM_CHECKOUT` unset ⇒ skipped, no CI impact).
   This change widens the drift from 2,437 to 2,470 lines against the unchanged 2,400 constant. Not

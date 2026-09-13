@@ -76,7 +76,7 @@ The literal model IDs stamped per role live in `.github/mozart/config/model-map.
 2.  Research        — sarah (+ codebase-pattern-finder, web-search-researcher) in parallel — OPTIONAL, skipped in TINY
 3.  Plan            — harry drafts → .mozart/plans/<slug>.md
 4.  Internal review — bob (always) + librarian (BROWNFIELD) + xander/dexter/ruby/otto/tessa/percy (conditional, parallel)
-5.  Counterpoint on plan — sebastian's cross-model review → <slug>.counterpoint-r1-plan.md
+5.  Counterpoint on plan — sebastian's cross-model review; mozart persists it (sebastian holds neither `edit` nor `execute`) → <slug>.counterpoint-r1-plan.md
 6.  Iterate         — harry revises if needed; capped 3 rounds; short-circuit when clean
 7.  Implement       — jackson, phase by phase (parallel streams when independent)
 8.  Mid-build gate  — mozart per-phase gate + conditional specialists (librarian / ian / xander / otto / ruby / dexter / tessa / percy / bob)

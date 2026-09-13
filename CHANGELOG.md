@@ -8,6 +8,42 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Added — field-notes harvest: four prose entries, three mechanisms, ported from mozart-orchestration
+
+Four prose field notes ported byte-identical into `mozart.agent.md` (three: known-wrong facts in the
+brief, scope empirical findings to platform/version/date, an unattended run needs a decision log) and
+`jackson.agent.md` (one: mutation testing finds missing tests, not weak ones). Three related findings
+land as **mechanisms** rather than prose — the family's 2026-09-12 campaigns showed prose contracts
+inside a persona don't reliably change behavior: M2 (verify the measuring instrument at a known-FAIL
+base before trusting it) and M7 (a population floor and a named member on every counting/globbed
+check) join `harry.agent.md`'s Verification rules; M4 (name the pre-revision sections a mechanism
+touches, in the revision message) joins `.github/mozart/manual/DELIVER.md`'s stage-6 Iterate
+procedure, with a 93-char requirement pointing at it from `mozart.agent.md`'s Orchestration
+discipline section (chosen over inlining the full M4 text there, which would have cost 721 chars —
+75% of the then-remaining headroom to the 30,000-char hard cap — and put two copies of one rule in
+one port).
+
+**Measured against the hard cap** (`check_agents.py:101-102`, documented at `docs/COPILOT_PORT.md:559`):
+`mozart.agent.md` is now **29,137 chars — 863 chars of headroom, WARN band, not FAIL.**
+`harry.agent.md` is **27,567 chars**. The straight seven-entry prose port (no mechanism split) would
+have put `mozart.agent.md` at 32,180 chars and broken this port's CI outright; the mechanism/prose
+split is what makes this fit. **Residual is roughly one more mozart field note, ever** — the rule at
+that ceiling: never compact existing entries to make room; ask first whether a new finding should be
+a mechanism instead; if it must be prose and does not fit, refuse the append in all three ports rather
+than let copilot alone diverge.
+
+- **`scripts/check-fingerprints.sh`** — widened the fingerprint grep from `mozart-orchestration` to
+  `mozart-(orchestration|local)`. The prior pattern could not catch a `mozart-local` host reference at
+  all (verified: the bare string does not match `jaystuart|/Users/[a-z]|/home/[a-z]|mozart-orchestration`);
+  the field notes' provenance text cites a local-model port of this pipeline and needed the wider net.
+- A pre-existing hardcoded carve (`check_agents.py:71-73`, `agents/mozart.md` expected at 2400 lines)
+  is **already red at base** and env-gated (`MOZART_UPSTREAM_CHECKOUT` unset ⇒ skipped, no CI impact).
+  This change widens the drift from 2,437 to 2,470 lines against the unchanged 2,400 constant. Not
+  repaired here — out of scope, measured and disclosed per this campaign's plan.
+- Cross-port agreement (this port, `mozart-orchestration`, `mozart-codex`) is verified pre-merge with
+  `scripts/check-field-note-parity.py`, run by hand across all three worktrees; not CI-wired, since no
+  port's CI can see the other two checkouts.
+
 Capability-vs-claim parity: every persona and bundled-doc contract in this port
 now promises only actions its `tools:` grant (or the port's mozart-only
 dispatch policy, D10) can actually perform, checked in both directions —

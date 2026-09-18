@@ -57,7 +57,25 @@ python3 scripts/check_agents.py --check-doc-table
 
 # Validate a single persona while drafting it
 python3 scripts/check_agents.py --file .github/agents/<name>.agent.md
+
+# Conductor-corpus behaviour loop (the local equivalent of check.yml's
+# "Conductor corpus" steps). Lint runs under the fixture-date override, so
+# the corpus's 2099-dated campaigns land post-adoption; the control run
+# below must NOT print the override-visibility line.
+MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 \
+  bash scripts/mozart-lint.sh tests/fixtures/campaign/conductor/lint   # expect exit 1
+bash scripts/mozart-lint.sh tests/fixtures/campaign/conductor/lint     # control
+for c in metrics-placeholder metrics-conductor metrics-vacuity; do
+  bash scripts/mozart-metrics.sh "tests/fixtures/campaign/conductor/$c"  # expect exit 0
+done
 ```
+
+Each corpus case carries its own `expected.tsv`; `check.yml` asserts the full
+set equality, the override-visibility line in both directions, and the
+section-scoped prose sites. Run those step bodies verbatim to reproduce CI.
+The corpus is a byte copy of mozart-orchestration's
+`tests/fixtures/conductor/` — `diff -r` between the two is the cross-repo
+check, and it runs at campaign-verification time, not in CI.
 
 `check_agents.py` is an **aggregating** dispatcher: pass several action flags in
 one invocation and it runs every one, returning the highest-priority status

@@ -136,6 +136,7 @@ Each campaign maintains its own (see `.github/mozart/manual/FLOWS.md`, Run ident
 - **State file**: `.mozart/plans/<slug>.state.md`
 - **Flow sketch**: `.mozart/plans/<slug>.flow.md`
 - **Plan file**: `.mozart/plans/<slug>.md`
+- **Decisions log**: `.mozart/plans/<slug>.decisions.md` (from the first judgment call)
 - **Validation report** (once stage 10 runs): `.mozart/plans/<slug>.validation.md`
 - **Investigation** (if DIAGNOSE): `.mozart/investigations/<slug>.md`
 - **ticket**: separate ticket per campaign in the repo's ticketing project

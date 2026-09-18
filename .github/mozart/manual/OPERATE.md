@@ -23,7 +23,7 @@ When unsure between STANDARD and HEAVY: choose HEAVY. On live infrastructure the
 
 ### 1. Intake + context pin
 - Restate the change in one sentence — what system, what change, why now
-- **Pin the target explicitly**: cluster/context, namespace, host/IP, database+instance — whatever applies. Check it against the consuming repo's `AGENTS.md` (many document the expected context and a verify-first discipline). Record the pinned target in the state file; it is the reference every mutating command is checked against
+- **Pin the target from both sides**: what the consuming repo documents and what a live command observes — the cluster context, the host name, the database the connection actually reaches, or the cloud account and region from an identity call against the expected profile. Record both as a `fact` conductor row linked to gate `1`; that row is the reference every mutating command is checked against. A mismatch stops the campaign; neither side wins by default
 - Classify mode (install / config-change / infra-debug / migration) and tier (TINY / STANDARD / HEAVY)
 - **In install / upgrade mode, resolve the version before planning** — query the upstream project's current stable release and what the intended install source (chart, package, image) would actually land, and surface both plus the gap. Chart and distro defaults lag upstream routinely; a fresh install landing a major version behind is the failure this check exists to prevent. A major-version gap goes to the user as a decision (take current / stay back with a stated reason) before otto plans against a version
 - Run the **long-running drift sanity check** (the same one in the DELIVER pre-flight gates — node pressure, Failed-pod count, Argo OutOfSync). Surface drift before you change anything on top of it
@@ -43,6 +43,7 @@ When unsure between STANDARD and HEAVY: choose HEAVY. On live infrastructure the
   - the **rollback procedure**: the exact command(s) to restore from the snapshot
   - the **blast radius / ramifications** (a required, first-class section — not a one-liner): every consumer of the thing being changed, what degrades or breaks *during* the change (not just if it fails), whether the change causes downtime or a restart of dependents, deployment/restart ordering, and what recovers automatically vs. needs a manual step. "What depends on this ConfigMap/Secret/Service/endpoint, and what happens to each while it's mid-change?"
   - **for install / upgrade modes, the version decision** (see otto's Version currency and hank's step 0): the resolved upstream latest stable, the version this install path actually lands, the gap between them, and the pin with its reason. A plan that names a version without saying where the number came from is incomplete — send it back
+  - the **mutation manifest** for each mutating step, as the Operate-mode rules define it — including its `ignore:` list of literal field paths and every secret-bearing value as `<redacted>`
 - **On HEAVY OPERATE, when the change touches a resource that code consumes** — a shared ConfigMap, a Secret, a Service contract, an endpoint, an env var read by app code — mozart runs **ian** to trace the *code-side* consumers and risk-rank them, the same ripple analysis he does for DELIVER. otto owns the infra-side blast radius (what k8s resources depend on it, ordering); ian owns the code-side (what app code reads it and breaks). This pairing is the ramifications analysis for a live change
 - The plan lives at `.mozart/plans/active/<slug>.md`. On TINY, hank composes a minimal version inline instead of a separate otto stage
 
@@ -52,7 +53,7 @@ When unsure between STANDARD and HEAVY: choose HEAVY. On live infrastructure the
 - The gate's output is a go/no-go. No apply happens until the snapshots exist and the dry-runs are clean
 
 ### 5. Apply (hank)
-- hank executes the plan's commands **one step at a time**, confirming the expected intermediate effect before the next step. Not a batch-and-check-at-the-end
+- hank executes **one variable per mutation**: each step changes what its manifest names and nothing else, and hank checks the read-back against the manifest before the next step (see Operate-mode rules). A fix proposed mid-apply — by you or by hank — gets its own manifest before it runs. No batch-and-check-at-the-end
 - Any unexpected result mid-sequence stops the apply; hank surfaces it and, if the system is now in an inconsistent state, applies the recorded rollback rather than pressing forward
 
 ### 6. Verify (hank)
@@ -71,9 +72,10 @@ If the user asked for a change plan without execution, stop after stage 3: otto'
 - **Never mutate without a snapshot and a recorded rollback command.** The one rule the whole shape exists to enforce. A TINY change is not an exception
 - **Resolve versions, never recall them.** Every install or upgrade — including a TINY one-liner and every passthrough "just install X" — states the resolved upstream latest stable, what the install path actually lands, and the gap, before it runs. Chart/package defaults lag upstream by months or a major version as a matter of course; accepting one silently is how a fresh install lands a year out of date. A major-version gap without a stated reason is a stop, not a default
 - **Server-side dry-run for Kubernetes, always.** `--dry-run=server`, not client — server-side is what catches immutable-field and admission-webhook failures
-- **Pin the target, check every mutating command against it.** Explicit context + namespace (or host + instance). A context mismatch is a stop, never a silent switch-and-proceed
+- **Pin the target from both sides — documented and live-observed — and check every mutating command against it.** Explicit context + namespace (or host + instance). A context mismatch is a stop, never a silent switch-and-proceed
 - **Observed, not expected.** Every "it works" carries the check behind it.
 - **Don't debug and mutate blind.** infra-debug investigates read-only first (dick + otto); mutations to test a hypothesis still go through the full loop
 - **Irreversible or out-of-authority steps escalate before apply.** PV deletion, destructive DDL, storage operations without a clean restore — user sign-off first
 - **Prefer GitOps when it exists.** If the change has a git/CI/Argo path, that's DELIVER — route there instead of applying directly. OPERATE is for what genuinely has no repo in the loop
 - **HEAVY on anything stateful.** Storage, RBAC, secrets, live DB schema, resource recreation — full pre-flight gate, no shortcuts
+- **One variable per mutation, with a mutation manifest.** Each step changes one field, or a set of fields that must move together with a `coupling:` rationale; a create or install is one entry, `created: <resource>` with its source digest, a multi-resource apply of pure creates is one step, and a modification bundled into an install is still its own entry. Each entry records field, old value, and new value. A secret-bearing value is always `<redacted>` with only its key name recorded; a hash is allowed only for generated high-entropy material (keys, tokens of at least 128 bits), and never a length. hank's Apply step defines the read-back check and the `ignore:` list of literal field paths it may skip. A dry-run is not this control

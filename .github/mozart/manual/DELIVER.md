@@ -6,6 +6,7 @@
 - Restate the task in one sentence; confirm anything ambiguous
 - **Detect the work shape**: DELIVER / AUDIT / DIAGNOSE / INCIDENT / OPERATE / EVAL (see Six shapes of work). Bug-shaped requests in DELIVER ("fix this bug," "X is broken," "regression," "failing") on STANDARD/HEAVY tier auto-promote to DIAGNOSE first → DELIVER second; the user can override with "I know what's wrong, just fix it". Live-system requests ("install X," "apply this," "the pod is crashlooping," "fix the config on the box") are OPERATE — and a live-system failure that needs investigation first is DIAGNOSE → OPERATE. **An active outage ("prod is down," "returning 500s," "users can't X," "SEV1," "on fire") is INCIDENT** — the mitigate-first, parallel-hypothesis, timeline-and-post-mortem shape; the tell vs. DIAGNOSE is whether service is *currently down* (INCIDENT) or merely *wrong/slow* (DIAGNOSE). When in doubt on a production failure, ask "is service down right now?" — if yes, INCIDENT.
 - **Detect the flow shape**: FULL (default) / PLAN-ONLY / RESEARCH-ONLY / INVESTIGATE-ONLY / VALIDATE-ONLY (see `.github/mozart/manual/FLOWS.md`, Partial flows). State which flow you're running
+- **Evaluate the 2b trigger** against the task statement: does it change who may do what (→ xander), or does it change behavior covered by a guarantee already published in this repo (→ ian)? Record the outcome now — `2b trigger: <lens> — <one-line reason>` or `2b trigger: none` — so a stage that runs later (or one that stays skipped) is traceable to what was decided at intake, not read as a deviation from the proposed flow. See `### 2b. Constraints` for the trigger's exact two conditions
 - **Detect any entry point** other than stage 1 (see `.github/mozart/manual/FLOWS.md`, Resume / entry points). If the user said "implement this plan" or similar, jump appropriately after this intake
 - **Classify tier** (TINY / STANDARD / HEAVY) — only relevant when implementation will run
 - **Classify project context** (GREENFIELD / BROWNFIELD) — determines whether the librarian runs at stages 4 and 8. Use the heuristics in `.github/mozart/manual/INTAKE.md`'s Project context section; default to BROWNFIELD when uncertain
@@ -62,7 +63,7 @@ When the campaign will modify code that lands in CI or deploys to a cluster (any
    - **Missing toolchain on GREENFIELD → the plan MUST open with a toolchain-bootstrap phase** (linter + formatter + type-check + test runner + CI workflow, pre-commit hooks where the repo will take them) before any feature phase. The per-phase gate's "run lints/types/tests" is meaningless against a repo where none are configured — a greenfield campaign without this phase ships N phases of unverifiable code.
    - Missing toolchain on BROWNFIELD → surface to the user: bootstrap it as a phase in this campaign, as a separate TINY campaign, or acknowledge the degraded gate in the state file. Never silently run a campaign whose per-phase gate has nothing mechanical to hold.
 
-If any gate fails and the user opts to proceed anyway, record the acknowledgement in the state file's "Status notes" section so valerie sees it at signoff and downstream debugging knows the inherited baseline.
+If any gate fails and the user opts to proceed anyway, record it as a decision in `<slug>.decisions.md` and cite its D-id in Status notes so valerie sees it at signoff and downstream debugging knows the inherited baseline.
 
 ### 2. Research (sarah, optional — and parallel)
 
@@ -79,11 +80,35 @@ Skip in TINY. In STANDARD/HEAVY, run when:
 
 Sarah herself parallelizes her internal tool calls (codebase scan + web search in one batch). The brief is returned inline for small jobs; mozart persists it to `.mozart/research/<slug>.md` for substantial ones, since sarah holds neither `edit` nor `execute`.
 
+### 2b. Constraints (conditional — narrow)
+
+Runs when the task statement itself trips one of two conditions, evaluated **once, at intake** — never re-derived mid-plan:
+
+1. The task changes **who may do what** — an authorization rule, trust boundary, privilege level, credential path, or the identity an action runs as → **xander**.
+2. The task changes behavior covered by a guarantee **already published in this repo** — README / PRIVACY / SECURITY / API docs / CHANGELOG — that the change could falsify → **ian**.
+
+**This is a deliberate narrowing of xander's stage-4 trigger and stage-8 trigger** — both of those also fire on dependency bumps and CI/CD workflow edits, neither of which produces a task-derivable authorization rule. Reusing either table here would turn "no cost when untriggered" into "a cost on most campaigns." If a condition fires, dispatch the named lens — xander or ian **only**, narrower than the four-lens pull route in harry's `## Consult requested` (unprompted push must stay rare) — fresh via the `agent` tool: the task statement, nothing else.
+
+**Accepted limitation**: this trigger cannot see a trust boundary that emerges only from an implementation choice made later — that's stage 4's and stage 8's job, not 2b's. Stated as an acceptance, not an omission.
+
+**Returns a constraint card, not a review** — the identical bound the stage-3 consult route's card carries (see harry's `## Consult requested`: `must`/`must-not` bullets, **falsifiable** against something that exists independently of this campaign, no design recommendations, no severities, and the same send-back-once / second-over-run remedy). **2b adds one clause of its own, load-bearing for the boundary dexter's adversarial test checks**: no artifact to review. 2b never sees a plan or a diff, which is what keeps it from degrading into "stage 4, earlier" — a distinction the stage-3 route doesn't need, since a consult can reference a plan already in progress and 2b structurally cannot.
+
+Persist the card to `.mozart/plans/active/<slug>.constraints.md` (append-only, `## <lens> — 2b` per card) and record the path in the state file's `Paths: Constraints` line — the same artifact and mechanism a stage-3 consult uses. A lens that supplied a 2b card is invoked again at stage 4 by a **fresh dispatch, never a continuation** — see `.github/mozart/manual/FLOWS.md` for the carve-out.
+
+**On a remediation entry** (AUDIT → remediate, DIAGNOSE → remediate — both enter DELIVER at stage 3, skipping stage 2): evaluate the trigger against the audit or investigation findings, which are exactly the evidence that makes it evaluable. If it fires, run 2b before stage 3; if not, the entry stays at stage 3.
+
+**Skip form**: when neither condition fires, `[-] 2b. Constraints — skipped: no trigger` — never leave it bare `[ ]`.
+
+**The untriggered cost, exactly — four touches, every one an existing mandatory-template field populated with its default, none of them a new document**: one state-file `## Stage progress` row (the skip form above); one flow-sketch `## Stage trace` line (`Stage 2b (Constraints): skipped — no trigger`); one state-file `Paths: Constraints` line, reading `n/a` the same way `Investigation: n/a` already reads on a non-bug-shaped campaign; and one clause in the intake rationale (`2b trigger: none — <reason>`), the same paragraph that already names which conditional specialists were and weren't anticipated. Nothing beyond those four: no `## Deviations from proposed` entry (the intake checklist records the trigger outcome before any agent runs, so a later "still not triggered" is what was proposed, not a divergence from it), no diagram node in either the Proposed or Actual flow (an unanticipated, untriggered stage was never drawn), no `## Findings ledger` row (nothing was raised), no `.mozart/plans/active/<slug>.constraints.md` file (no card to persist), no ticket transition.
+
 ### 3. Plan (harry)
 - Brief harry: task, research brief (if any), the **absolute** plan path to write to, the worktree path + campaign branch, context
 - Harry reads code, drafts the plan (template includes `Documentation to update` and `Pattern parity / wiring sites`)
 - **Wiring-sites discipline**: when the plan introduces or extends a pattern (transport wrapper, auth/role gate, structured-error envelope, ARIA attribute set, healthcheck argument, NetworkPolicy shape, securityContext stanza, parity field across Helm/kustomize/compose, etc.), harry must enumerate every existing site that needs the pattern — not just the site being changed. The search that produced the list is documented in the plan so downstream reviewers and jackson can re-run it. This is the lens that distinguishes "this diff is correct" from "this pattern is consistent across the codebase." Per-commit reviewers see the diff; only the wiring-sites enumeration in the plan makes the population visible to them. See the conductor body's Consistency lens section for the rationale.
 - **Plan-acceptance criterion**: harry's `## Verification` section must carry both an Automated list and a Manual list (or an explicit "Manual: none — fully machine-verifiable"); a plan with an undifferentiated list, or a hedge in place of one of the two, is not accepted — send it back.
+- **A consult request is not an open question.** If harry returns a `## Consult requested` block, don't surface it to the user before continuing — handle it directly. All three of his fields are load-bearing: **Lens** and **Question** drive the dispatch below the cap; **If declined** is what he drafts against the moment mozart can't or won't return a card
+  - **Below the cap (`Consult count` < 2)**: dispatch the named lens (xander, ian, librarian, or otto) fresh via the `agent` tool, briefed with the question and the task only (never the draft plan — none exists yet), and receive a **constraint card**: ≤5 bullets, each ≤2 lines, each a `must`/`must-not` rule citing `file:line` or a named external standard, each falsifiable against something that exists independently of this campaign (a published guarantee, an existing trust boundary, an external standard, a live manifest field) — no design recommendations, no severities. A return breaking either bound is sent back once with the bound restated; on a second over-run, pass only the first 5 conforming bullets and record the over-run in the findings ledger. Persist the card to `.mozart/plans/active/<slug>.constraints.md` (append-only, `## <lens> — consult r<N>` per card) and record the path in the state file's `Paths: Constraints` line. **Increment `Consult count` in `## Iteration counters` in the same step that launches the consult** — the same discipline stage 6's iteration cap uses for its own round counter, below; a counter you plan to update later is how a written cap gets silently exceeded. Then continue harry's live session with the card so he resumes drafting (or brief a freshly-dispatched harry with it, per *Continuation vs dispatching fresh*, if his session isn't reachable). Record the exchange as a **stage-3 event** in the flow-sketch trace — not a new stage
+  - **Cap: 2 consults per campaign.** At the cap, don't dispatch a third — **both** surface to the user that a consult was skipped at the cap **and** message harry to resume drafting against his own stated **If declined** fallback. A consult must never actually stall him; his fallback is what makes that true, not just what his return format promises
 - If harry returns **open questions**, surface them to the user before continuing
 
 ### 4. Internal review (conditional, parallel)
@@ -379,6 +404,7 @@ Then write the final report:
 
 **Disposition**: shipped — <the merge evidence>. "shipped" is reserved for confirmed merge evidence; a campaign closing `pending-pr` titles this report `<slug>: PR open, awaiting merge` and names the PR number, branch, and worktree path here instead.
 **Plan**: <path>
+**Decisions**: <path or "none">
 **Flow sketch**: .mozart/plans/<slug>.flow.md
 **Counterpoint**: <r1-plan path>, <r2-diff path if run>
 **Research**: <path if produced>

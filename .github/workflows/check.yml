@@ -887,3 +887,145 @@ jobs:
 
       - name: Metrics smoke
         run: bash scripts/mozart-metrics.sh tests/fixtures/campaign/clean
+
+      # --- Conductor self-verification corpus (2026-09-17-deliver-conductor- ------
+      # self-verification, Phase 9). The PD24 runner loop, run against the
+      # committed byte copy of orchestration's tests/fixtures/conductor/ corpus
+      # (A16: diff -r is checked as a separate step below). Lint runs under the
+      # MOZART_LINT_CONDUCTOR_SINCE fixture-hook override so the 2099-dated
+      # fixtures land post-adoption; the override-visibility line is asserted
+      # both present (override run) and absent (control run).
+      - name: Conductor corpus — present and structurally complete (cross-repo A16 byte-diff runs at campaign-verification time, not in CI)
+        run: |
+          test -d tests/fixtures/campaign/conductor/lint
+          test -d tests/fixtures/campaign/conductor/metrics-placeholder
+          test -d tests/fixtures/campaign/conductor/metrics-conductor
+          test -d tests/fixtures/campaign/conductor/metrics-vacuity
+          n=$(find tests/fixtures/campaign/conductor/lint/.mozart -name '*.state.md' | wc -l | tr -d ' ')
+          if [ "$n" -lt 34 ]; then echo "expected >=34 lint fixture state files, found $n" >&2; exit 1; fi
+
+      - name: Conductor corpus — lint case, Check K/L/J triples match expected.tsv (PD24)
+        run: |
+          root=tests/fixtures/campaign/conductor/lint
+          tmp=$(mktemp -d)   # scratch outside the tree — never dirty the checkout
+          trap 'rm -rf "$tmp"' EXIT
+          out=$(MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 bash scripts/mozart-lint.sh "$root" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc" >&2; echo "$out" >&2; exit 1; fi
+          printf '%s\n' "$out" | grep -qF 'conductor adoption date overridden: 2099-06-01' || {
+            echo "missing override-visibility line" >&2; echo "$out" >&2; exit 1; }
+
+          # Derive actual triples: (category, basename minus .state.md, key
+          # before the first ':' after ' — '), keeping only the K/L/J
+          # categories PD24 names — Check I's missing-12b is deliberately
+          # excluded here, same as the plan's own runner loop.
+          printf '%s\n' "$out" \
+            | grep -E '\[(conductor-|decision-trigger|mutation-manifest|missing-2b)' \
+            | sed -E 's/^LINT +\[([a-z0-9-]+)\] +([^ ]+) — ([^:]+):.*$/\1\t\2\t\3/' \
+            | sed -E 's#\t.*/([^/]+)\.state\.md\t#\t\1\t#' \
+            | sort -u > "$tmp/actual.tsv"
+
+          awk -F'\t' '$1=="lint"{print $2"\t"$3"\t"$4}' "$root/expected.tsv" | sort -u > "$tmp/expected.tsv"
+
+          floor=$(wc -l < "$tmp/expected.tsv" | tr -d ' ')
+          if [ "$floor" -lt 30 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
+          grep -qF "$(printf 'conductor-row\t2099-07-03-deliver-ctl\tCR1')" "$tmp/expected.tsv" || {
+            echo "named member CR1 not in expected.tsv — expected.tsv itself drifted" >&2; exit 1; }
+
+          if ! diff -u "$tmp/expected.tsv" "$tmp/actual.tsv"; then
+            echo "lint triples don't match expected.tsv" >&2; exit 1
+          fi
+
+      - name: Conductor corpus — override control (no override yields no line, prebound campaign untouched) (PD24)
+        run: |
+          root=tests/fixtures/campaign/conductor/lint
+          out=$(bash scripts/mozart-lint.sh "$root" 2>&1) && rc=0 || rc=$?
+          if printf '%s\n' "$out" | grep -q '^conductor adoption date overridden:'; then
+            echo "override-visibility line printed with no override set" >&2; echo "$out" >&2; exit 1
+          fi
+          printf '%s\n' "$out" | grep -qF '2099-05-31-deliver-prebound' || {
+            echo "expected 2099-05-31-deliver-prebound to yield conductor-missing under the no-override control" >&2
+            echo "$out" >&2; exit 1; }
+
+      - name: Conductor corpus — metrics cases match expected lines (PD24)
+        run: |
+          for case in metrics-placeholder metrics-conductor metrics-vacuity; do
+            root="tests/fixtures/campaign/conductor/$case"
+            out=$(bash scripts/mozart-metrics.sh "$root" 2>&1) && rc=0 || rc=$?
+            if [ "$rc" -ne 0 ]; then echo "$case: expected exit 0, got $rc" >&2; echo "$out" >&2; exit 1; fi
+            while IFS=$'\t' read -r tag line; do
+              [ "$tag" = "metrics" ] || continue
+              printf '%s\n' "$out" | grep -qxF "$line" || {
+                echo "$case: missing expected line: $line" >&2; echo "$out" >&2; exit 1; }
+            done < "$root/expected.tsv"
+          done
+
+      # V13-equivalent: the conductor contract's prose sites, section-scoped.
+      # Greps need no harness, so this is a CI step rather than a test file.
+      # Counterpart of orchestration's V13 gate, remapped onto this port's
+      # containers (the manual bundle, not one persona body).
+      - name: Conductor prose sites present, section-scoped (V13-equivalent)
+        run: |
+          bad=""; sites=0; named=0
+          scoped() {  # $1=file $2=heading anchor $3=stop level $4=term
+            awk -v a="$2" -v s="$3" -v term="$4" '
+              index($0, a) == 1 { p = 1; next }
+              p && $0 ~ s { exit }
+              p && index($0, term) > 0 { n++ }
+              END { print n + 0 }' "$1"
+          }
+          check() {  # $1=file $2=anchor $3=stop $4=term $5=label
+            n=$(scoped "$1" "$2" "$3" "$4")
+            sites=$((sites + 1))
+            if [ "$n" -lt 1 ]; then bad="$bad [absent: $5]"; fi
+            if [ "$5" = "hank 4. Apply / manifest" ] && [ "$n" -ge 1 ]; then named=1; fi
+          }
+          # interval expressions ({n,m}) are not portable across awks; '^###? '
+          # matches a level-2 or level-3 heading without one.
+          L2='^## '; L3='^###? '
+
+          # decisions.md is named where a resuming agent looks for artifacts
+          check .github/mozart/manual/WORKTREES.md '### Per-campaign artifacts' "$L3" 'decisions.md' 'WORKTREES Per-campaign artifacts / decisions.md'
+          check .github/mozart/manual/STATE.md '### Directory convention' "$L3" 'decisions.md' 'STATE Directory convention / decisions.md'
+          check .github/mozart/PIPELINE.md '## Output paths' "$L2" 'decisions.md' 'PIPELINE Output paths / decisions.md'
+
+          # the mutation manifest is named at every site that authors or applies one
+          check .github/mozart/manual/OPERATE.md '### 3. Change plan (otto)' "$L3" 'manifest' 'OPERATE Change plan / manifest'
+          check .github/mozart/manual/OPERATE.md '### 5. Apply (hank)' "$L3" 'manifest' 'OPERATE Apply (hank) / manifest'
+          check .github/mozart/manual/OPERATE.md '### Operate-mode rules' "$L3" 'manifest' 'OPERATE Operate-mode rules / manifest'
+          check .github/mozart/manual/INCIDENT.md '### Incident-mode rules' "$L3" 'manifest' 'INCIDENT Incident-mode rules / manifest'
+          check .github/agents/hank.agent.md '### 4. Apply' "$L3" 'manifest' 'hank 4. Apply / manifest'
+          check .github/agents/hank.agent.md '## Under a declared INCIDENT' "$L2" 'manifest' 'hank Under a declared INCIDENT / manifest'
+          # 'mutation manifest', not the bare 'manifest' the other sites use:
+          # otto's "Where you fit" already says "infra YAML / manifests" at base,
+          # so the loose term passes there without the contract's text — the one
+          # site of the fifteen where the bare term cannot show the claim false.
+          check .github/agents/otto.agent.md '## Where you fit' "$L2" 'mutation manifest' 'otto Where you fit / mutation manifest'
+          check .github/mozart/PIPELINE.md '## OPERATE pipeline' "$L2" 'manifest' 'PIPELINE OPERATE pipeline / manifest'
+          check .github/mozart/PIPELINE.md '## INCIDENT pipeline' "$L2" 'manifest' 'PIPELINE INCIDENT pipeline / manifest'
+
+          # the pin is two-sided wherever the pin is stated
+          check .github/mozart/manual/OPERATE.md '### 1. Intake + context pin' "$L3" 'both sides' 'OPERATE Intake + context pin / both sides'
+          check .github/mozart/manual/OPERATE.md '### Operate-mode rules' "$L3" 'both sides' 'OPERATE Operate-mode rules / both sides'
+          check .github/mozart/PIPELINE.md '## OPERATE pipeline' "$L2" 'both sides' 'PIPELINE OPERATE pipeline / both sides'
+
+          # exact-count checks: one adjudication heading, and two texts that must be gone
+          # '|| true': grep -c exits 1 on a zero count, which under the runner's
+          # `bash -e` would kill the step before it could name what was missing.
+          n=$(grep -cF '### Adjudicating a dispute' .github/agents/dick.agent.md || true)
+          sites=$((sites + 1))
+          [ "$n" -eq 1 ] || bad="$bad [dick heading 'Adjudicating a dispute' count=$n, want 1]"
+
+          n=$(grep -rlF 'running log of decisions' .github/agents .github/mozart | grep -c . || true)
+          sites=$((sites + 1))
+          [ "$n" -eq 0 ] || bad="$bad [bundle still says 'running log of decisions' in $n file(s)]"
+
+          n=$(grep -rlF 'An unattended run needs a decision log' .github/agents | grep -c . || true)
+          sites=$((sites + 1))
+          [ "$n" -eq 0 ] || bad="$bad [promoted field note still present in $n agent file(s)]"
+
+          # population floor + named member: a silently-empty site list must not pass
+          [ "$sites" -ge 18 ] || bad="$bad [scoped-site population $sites < 18]"
+          [ "$named" -eq 1 ] || bad="$bad [named member absent: hank ### 4. Apply / manifest]"
+
+          if [ -n "$bad" ]; then echo "V13-equivalent FAIL:$bad" >&2; exit 1; fi
+          echo "V13-equivalent PASS: $sites scoped sites, named member present"

@@ -52,3 +52,39 @@ pipeline. Each is caught by the next code audit — because audits look at the
 population, and per-commit gates look at the diff. The wiring-sites
 enumeration is how a plan makes the population visible to the per-commit
 gates.
+
+# Consult requested
+
+Persona-private overflow for `harry.agent.md`'s `## Consult requested`
+section (headroom guard, campaign 2026-09-17-deliver-conductor-self-
+verification). The pull-consult return's exact form:
+
+```
+## Consult requested
+- **Lens**: <xander | ian | librarian | otto>
+- **Question**: <one question, answerable without reading a drafted plan>
+- **If declined**: <what you'll assume and draft against if mozart doesn't return a card>
+```
+
+**Four lenses, not two** — wider than stage 2b's push route (xander + ian
+only): a pull consult carries a specific question, and "does this already
+exist?" (librarian) and "is this field immutable?" (otto) are exactly that
+shape, even though neither is pushed unprompted at 2b.
+
+Exactly **one** question. **State what you'll assume if the consult is
+declined** — a consult must never block drafting; you always have a
+fallback and can proceed without one. Mozart dispatches the named lens
+fresh via the `agent` tool and messages you back with a constraint card
+(see harry's *Routing to specialists* for who performs the invocation).
+**A consult request is not an open question**: an open question (Working
+Mode step 3) is something only the user can decide; a consult is a narrow
+judgment call a specialist would settle in one pass. Don't use one for the
+other.
+
+**Constraint-derived requirements go into the plan unattributed** — plain
+`must`/`must-not` rules, never "per xander's pre-plan consult." Attribution
+would let the stage-4 reviewer meet its own prior conclusion inside the
+plan under review, framed as already-satisfied — the same anchoring effect
+the fresh-dispatch rule (see mozart's *Continuation vs dispatching fresh*)
+exists to prevent, reached through the document instead of the chat
+history.

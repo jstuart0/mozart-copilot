@@ -3,7 +3,7 @@
 ---
 > # re-check) — that stays a manual sweep at intake. See
 > # .github/mozart/PIPELINE.md.
-35a37,45
+46a48,56
 > #
 > # The Codex-drift check (below) matches any of the three external-review
 > # labels this port's history carries: "Counterpoint" (this port's cross-model
@@ -13,24 +13,24 @@
 > # same way — a verbatim port of this script would key on "Codex" alone and
 > # silently stop catching drift the moment a campaign's Paths block says
 > # "Counterpoint r1" instead (D6).
-41a52,54
+52a63,65
 > 
 > # External-review label set this port's state files may carry (D6).
 > REVIEW_LABEL_RE='(Counterpoint|Codex|Claude)'
-564c577,580
+657c670,673
 <   # --- Check C: paths-vs-checkbox codex drift --------------------------------
 ---
 >   # --- Check C: paths-vs-checkbox external-review drift ----------------------
 >   # Generalized label set (D6) — matches Counterpoint, Codex, or Claude, so a
 >   # state file written under any of the three forms this port's history
 >   # carries is checked identically.
-567,568c583,584
+660,661c676,677
 <     if grep -qE '^\- \[x\] 5\. Codex' "$f" && grep -E '^\- Codex r1' "$f" | grep -q 'not yet run'; then
 <       finding "codex-drift" "$f — stage 5 checkbox ticked but Paths says codex r1 'not yet run'"
 ---
 >     if grep -qE "^\- \[x\] 5\. ${REVIEW_LABEL_RE}" "$f" && grep -E "^\- ${REVIEW_LABEL_RE} r1" "$f" | grep -q 'not yet run'; then
 >       finding "review-drift" "$f — stage 5 checkbox ticked but Paths says round 1 'not yet run'"
-570,571c586,587
+663,664c679,680
 <     if grep -qE '^\- \[x\] 9\. Codex' "$f" && grep -E '^\- Codex r2' "$f" | grep -q 'not yet run'; then
 <       finding "codex-drift" "$f — stage 9 checkbox ticked but Paths says codex r2 'not yet run'"
 ---

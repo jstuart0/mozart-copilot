@@ -901,8 +901,20 @@ jobs:
           test -d tests/fixtures/campaign/conductor/metrics-placeholder
           test -d tests/fixtures/campaign/conductor/metrics-conductor
           test -d tests/fixtures/campaign/conductor/metrics-vacuity
-          n=$(find tests/fixtures/campaign/conductor/lint/.mozart -name '*.state.md' | wc -l | tr -d ' ')
-          if [ "$n" -lt 34 ]; then echo "expected >=34 lint fixture state files, found $n" >&2; exit 1; fi
+          n=$(find tests/fixtures/campaign/conductor/lint -name '*.state.md' | wc -l | tr -d ' ')
+          if [ "$n" -lt 48 ]; then echo "expected >=48 lint fixture state files, found $n" >&2; exit 1; fi
+          # Checks K/L must reach six layouts, and a total floor cannot tell
+          # "48 files, all in active/" from "48 across six layouts". Probe each
+          # one. The last two are the legacy prefixless flat file and the
+          # legacy thoughts/shared/ root, both of which K/L used to skip.
+          root=tests/fixtures/campaign/conductor/lint
+          for layout in ".mozart/plans/active/*.state.md" ".mozart/plans/finished/*.state.md" \
+                        ".mozart/plans/active-*.state.md" ".mozart/plans/finished-*.state.md" \
+                        ".mozart/plans/[0-9]*.state.md" "thoughts/shared/plans/[0-9]*.state.md"; do
+            # shellcheck disable=SC2086
+            set -- $(eval echo "$root/$layout")
+            [ -f "$1" ] || { echo "unpopulated corpus layout: $layout" >&2; exit 1; }
+          done
 
       - name: Conductor corpus — lint case, Check K/L/J triples match expected.tsv (PD24)
         run: |
@@ -926,8 +938,19 @@ jobs:
 
           awk -F'\t' '$1=="lint"{print $2"\t"$3"\t"$4}' "$root/expected.tsv" | sort -u > "$tmp/expected.tsv"
 
+          # Every LINT line the corpus emits must be accounted for in
+          # expected.tsv. Set-equality over a FILTERED category list cannot see
+          # a fixture that ALSO fires an unfiltered category — noflow-j fired
+          # missing-12b alongside its intended missing-2b and nothing said so.
+          emitted=$(printf '%s\n' "$out" | grep -c '^LINT \[' || true)
+          want=$(wc -l < "$tmp/expected.tsv" | tr -d ' ')
+          if [ "$emitted" -ne "$want" ]; then
+            echo "corpus emitted $emitted LINT line(s), expected.tsv records $want — a fixture is firing a category nothing accounts for" >&2
+            printf '%s\n' "$out" >&2; exit 1
+          fi
+
           floor=$(wc -l < "$tmp/expected.tsv" | tr -d ' ')
-          if [ "$floor" -lt 30 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
+          if [ "$floor" -lt 47 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
           grep -qF "$(printf 'conductor-row\t2099-07-03-deliver-ctl\tCR1')" "$tmp/expected.tsv" || {
             echo "named member CR1 not in expected.tsv — expected.tsv itself drifted" >&2; exit 1; }
 

@@ -54,6 +54,48 @@ loop: lint triples against `expected.tsv`, the override-visibility control
 in both directions, the metrics cases whole-line, and a section-scoped prose
 check over every site the contract names.
 
+### Fixed — reconciliation round 1 (F47-F52, mirrored from source's external pre-merge review)
+
+Checks K/L claimed the same current+legacy scope as Checks C/D and did not have
+it: the legacy prefixless flat glob (`plans/<date>-<slug>.state.md`) was missing,
+and the adoption date was read off the raw basename, so every `active-`/
+`finished-` prefixed file classified as pre-adoption regardless of its date. A
+post-adoption state file with no `## Conductor record` linted clean in either
+layout. The fixture corpus gains one fixture per layout — six, including the
+legacy `thoughts/shared/` root — and `check.yml` now asserts each layout is
+populated rather than counting files in two directories.
+
+Conductor and change-ledger rows were split on a raw `|`, so a `source` cell
+holding a shell pipeline shifted every later cell and an **empty control parsed
+as filled**. `STATE.md` said "no literal pipe"; nothing enforced it. Both tables
+now honour `\|` as an escaped pipe and reject any row whose cell count disagrees
+with its header (`conductor-row` / `mutation-manifest`), with the finding
+deferred to `END` so it stays behind PD1's adoption gate.
+`scripts/mozart-metrics.sh` applies the same rule and prints the count of rows it
+skipped instead of tallying a shifted row as controlled.
+
+Roots and the file list were whitespace-delimited strings in
+`scripts/mozart-metrics.sh`, and Check F word-split an unquoted `$(find ...)`, so
+a checkout under a path containing a space reported "no state files" and a stale
+campaign there went unreported. Both are NUL-delimited arrays now.
+
+PD1's adoption gate has two limbs — slug date on or after the cutoff, **or** a
+header already present — and `decision-trigger` implemented only the first, so a
+campaign carrying a conductor record with a pre-cutoff slug date had its rows
+checked while its decisions log went unchecked.
+
+`check.yml` also compares the corpus's **total** emitted lint lines against
+`expected.tsv`, not just the filtered K/L/J set: `2099-07-29-noflow-j` was firing
+`missing-12b` alongside its intended `missing-2b`, so it was not failing only for
+its intended reason and no step could see it. A new `.gitattributes` exempts the
+CRLF fixture (its carriage returns are the fixture) and the generated
+`tests/lint-upstream.diff` from `git diff --check`; the rest of the corpus was
+cleaned rather than exempted.
+
+Category count is unchanged at fifteen — every fix reuses an existing category.
+`scripts/check-lint-parity.sh` and the A16 `diff -r` are both clean against
+source at this commit.
+
 ### Added — catch-up with mozart-orchestration 0.3.0
 
 Items this port had not yet received:

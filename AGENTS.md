@@ -77,6 +77,20 @@ The corpus is a byte copy of mozart-orchestration's
 `tests/fixtures/conductor/` — `diff -r` between the two is the cross-repo
 check, and it runs at campaign-verification time, not in CI.
 
+The campaign scripts have a matching cross-repo check, for the same reason
+off CI:
+
+```bash
+bash scripts/check-lint-parity.sh /path/to/mozart-orchestration
+```
+
+`scripts/mozart-lint.sh` must equal the source's modulo the allowlisted
+reviewer-label diff committed at `tests/lint-upstream.diff`, and
+`scripts/mozart-metrics.sh` must be byte-identical to it. The script also
+guards against a vacuous pass (an empty or truncated allowlist file) with a
+changed-line floor and a named member. It narrows the manual review of that
+diff; it does not replace it.
+
 `check_agents.py` is an **aggregating** dispatcher: pass several action flags in
 one invocation and it runs every one, returning the highest-priority status
 (a real failure `1` outranks a nothing-to-check `2` outranks a clean `0`).

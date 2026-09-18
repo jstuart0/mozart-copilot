@@ -76,7 +76,11 @@ Items this port had not yet received:
 
 - `scripts/mozart-lint.sh` is now equal to mozart-orchestration's, modulo an
   allowlisted reviewer-label diff committed at `tests/lint-upstream.diff`;
-  `scripts/mozart-metrics.sh` is byte-identical to it.
+  `scripts/mozart-metrics.sh` is byte-identical to it. `scripts/check-lint-parity.sh`
+  codifies that comparison — it previously existed only as prose in the
+  campaign plan, and its allowlist could not admit the lowercase source side
+  of its own `codex-drift` -> `review-drift` rename, so it could never reach
+  a passing count on a correct port.
 - `mozart.agent.md` drops the "An unattended run needs a decision log" field
   note — promoted into the decisions-log mechanism it described.
 

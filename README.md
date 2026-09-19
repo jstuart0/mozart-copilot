@@ -183,7 +183,12 @@ routing table for the rest of the bundle) and `.github/mozart/manual/INTAKE.md`
 (shape-boundary tests, task tiers, project context) from that resolved
 root — the two mandatory boot reads. It then runs intake (shape, tier,
 mode, slug), creates a state file and a flow sketch, and conducts the
-pipeline, narrating each specialist dispatch so you can follow along. If
+pipeline, narrating each specialist dispatch so you can follow along.
+Alongside those two it keeps a decisions log
+(`.mozart/plans/active/<slug>.decisions.md`) from the first judgment call
+onward, and records its own derived claims — a check it ran, a dispute it
+settled, a fact it relied on — in the state file's `## Conductor record`,
+each with the control that would have shown the claim false. If
 neither bundle candidate resolves, mozart stops and names both rather than
 improvising — see Install above.
 

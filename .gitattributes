@@ -1,0 +1,16 @@
+# The CRLF fixture IS its line endings: it proves mozart-lint.sh's conductor
+# parser strips \r so a CRLF-encoded state file lints identically to an LF one.
+# -text keeps git from normalising it on checkout; -whitespace keeps
+# `git diff --check` from reporting its 28 carriage returns as trailing
+# whitespace. It cannot tell a deliberate \r from a stray one, and the rest of
+# the fixture corpus was cleaned rather than exempted, so this is the only
+# path in the repo that opts out. Mirrors mozart-orchestration's .gitattributes
+# at this port's corpus path (A16 keeps the two byte-identical).
+tests/fixtures/campaign/conductor/lint/.mozart/plans/active/2099-07-24-deliver-crlf.state.md -text -whitespace
+
+# tests/lint-upstream.diff is GENERATED (`diff source/scripts/mozart-lint.sh
+# scripts/mozart-lint.sh`) and check-lint-parity.sh compares it byte for byte
+# against a fresh run. A `> ` line -- diff's rendering of a blank line in this
+# port's insertion -- carries a trailing space by construction, and stripping
+# it would make the parity check fail against its own regeneration.
+tests/lint-upstream.diff -whitespace

@@ -576,6 +576,54 @@ pre-designated, all measured with the same two-delimiter-extractor +
   `agents/harry/PLAN-TEMPLATE.md` row as a real citation, not a hypothetical
   one (confirmed in the Phase 5 runtime-reads reconciliation).
 
+## The conductor record lives in the manual, not the conductor body
+
+Campaign `2026-09-17-deliver-conductor-self-verification` binds mozart's own
+derived claims to the same M2/M7 discipline every other check carries: a
+`## Conductor record` state-file section, a `<slug>.decisions.md` log, an
+adjudication route through dick, and a mutation manifest on every live
+mutation. Upstream lands all of that in one 260KB `agents/mozart.md`. This
+port could not.
+
+`mozart.agent.md` was at **29,137 chars** against the 30,000-char hard cap
+(`scripts/check_agents.py:101-102`) — 863 chars of headroom for roughly
+8,400 chars of new contract. So the split is the reverse of upstream's: only
+two items are inline in the conductor body — the `## Orchestration
+discipline` bullet binding mozart's own checks to M2/M7, and the clause on
+the "Surface conflicts" bullet routing a dispute in which mozart's own claim
+is one side. Everything else lands in the bundle:
+
+| Contract | Upstream | Here |
+|---|---|---|
+| conductor record, decisions log, dispositions, gate table | `agents/mozart.md` | `manual/STATE.md` |
+| OPERATE pin + mutation manifest | `agents/mozart.md` | `manual/OPERATE.md` |
+| INCIDENT manifest + recovery | `agents/mozart.md` | `manual/INCIDENT.md` |
+| adjudicating-dick fresh-dispatch carve-out | `agents/mozart.md` | `manual/FLOWS.md` |
+| stage 2b, pull-consult route, M4 | `agents/mozart.md` | `manual/DELIVER.md` |
+| harry's pull-consult form and rationale | `agents/harry.md` | `agents/harry/PLAN-TEMPLATE.md` |
+
+The one deletion that bought headroom: mozart's third field note ("An
+unattended run needs a decision log"), promoted out of prose into the
+decisions-log mechanism it described. A note whose content became a contract
+does not also stay a note. Net: **28,450 chars**, 687 under base.
+
+The snippet texts themselves are byte-identical across all four editions —
+they are frozen in orchestration's `tests/parity/snippets/` and landed
+verbatim here. Port-specific wording (which script, which artifact glob,
+that an adjudicating dick is *dispatched* fresh rather than spawned) sits in
+adjacent sentences, never inside a snippet.
+
+**Two catch-up items resolve as no-ops here, for capability reasons, not
+oversight.** Upstream's 0.3.0 removed `sarah` from the field-notes
+"cannot self-update" list because sarah gained `Write`. This port solved the
+same problem with the delegated-write mechanism instead (mozart persists on
+behalf of a grantless specialist), so sarah holds `[read, search, web]` and
+correctly *stays* in `.github/mozart/LEARNINGS.md`'s grantless list — that
+line is derived from this port's own grants and is already right. And the
+frozen carve pin (`db3e255`) that `--check-carve` validates is deliberately
+not bumped: it is the upstream commit the carve was measured against, not a
+tracking pointer.
+
 ## Implementation notes
 
 Three check-tool defects were found by exercising the validators against

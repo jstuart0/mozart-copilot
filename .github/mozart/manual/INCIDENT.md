@@ -31,6 +31,7 @@ When unsure between SEV levels: choose the higher one. Over-responding to a SEV3
 - Identify the **fastest safe path to restore service**: roll back the last deploy, fail over, scale up, restart, flip a feature flag off, drain a bad node, shed load. Prefer the reversible lever
 - **hank executes, single-threaded** (see the parallelism discipline). Under an active incident, restoring service can outrank a full snapshot — but hank still records the rollback command and tags the change `accepted-risk (incident)` in the change ledger. This is the *only* sanctioned relaxation of hank's "never mutate without a snapshot" rule, and only under a declared incident
 - **Verify the mitigation empirically** — did the symptom actually clear? Append the observed result to the timeline. A mitigation that didn't help gets rolled back (its command is in the ledger) before the next lever is tried — don't stack unverified changes
+- **One lever, one variable.** Each mitigation changes one variable and records its mutation manifest (see Operate-mode rules) in its timeline entry and change-ledger row, secret-bearing values `<redacted>`. Its read-back comparison runs, without blocking, once the symptom check clears, and no later than stage 3 Converge
 - If the fastest safe mitigation is genuinely unknown, that's what stage 2 races to find — but a known-good rollback almost always exists and should be tried first
 
 ### 2. Race hypotheses (parallel) — runs concurrent with stage 1
@@ -67,7 +68,8 @@ When unsure between SEV levels: choose the higher one. Over-responding to a SEV3
 ### Incident-mode rules
 - **Mitigate first; understand second.** The inversion of DIAGNOSE. A known-good rollback beats a perfect diagnosis when service is down
 - **One hand on the live system.** Investigation parallelizes; mitigation serializes through the IC. Never run concurrent live mutations during an incident
-- **Verify every mitigation before stacking another.** Unverified changes on a broken system compound the confusion; roll back what didn't help
+- **One variable per mitigation; verify it before the next.** Unverified changes on a broken system compound the confusion; roll back what didn't help. The read-back comparison against each mitigation's manifest runs once its symptom check clears and no later than stage 3 Converge — before a durable fix replaces the mitigation — never blocks, and a mismatch it finds becomes a post-mortem finding
+- **Disputes wait for Converge.** The conductor-record dispute rule does not gate mitigation; its rows are written at stage 3 and are due by closeout
 - **Mitigated ≠ fixed.** Always say which. The durable fix is not optional — it's deferred to full-rigor DELIVER/OPERATE, not skipped
 - **The timeline is the source of truth.** Append at every state change. It's what makes the post-mortem honest and the resume-after-crash possible
 - **Blameless post-mortem, always on SEV1/SEV2.** The output is action items, not attribution. Detection gaps and observability gaps are first-class findings

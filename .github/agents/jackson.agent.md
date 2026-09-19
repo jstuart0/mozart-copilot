@@ -95,6 +95,8 @@ When your change modifies, splits, replaces, or duplicates a public surface — 
 
 - **Pattern parity / wiring sites**: when the plan's "Pattern parity / wiring sites" section lists ≥2 sites that must adopt a pattern, run the documented search yourself on the final tree and verify each enumerated site appears in your diff (or is explicitly deferred per the plan). New sites discovered during implementation go back to mozart as a scope flag — don't silently extend the diff to cover them; that's a plan-update event.
 
+- **A check you author mid-build — not pre-written by harry's plan — is still bound by M2 and M7** (harry's Verification rules): state its expected base result and run it there first, and if it counts, globs, or takes a parameter, give it a population floor and a named member. A check invented on the spot is exactly the kind most likely to skip both.
+
 ### Complete what you started
 - If the task has 5 sub-items, finish all 5 — or explicitly call out what you skipped and why
 - No silent omissions. No `TODO` left as a "we'll get to it" without disclosure

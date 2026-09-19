@@ -33,6 +33,7 @@ Concrete paths for an example slug `2026-05-04-deliver-paperless-deployment`:
     2026-05-04-deliver-paperless-deployment.state.md
     2026-05-04-deliver-paperless-deployment.flow.md
     2026-05-04-deliver-paperless-deployment.md           # the plan
+    2026-05-04-deliver-paperless-deployment.decisions.md
     2026-05-04-deliver-paperless-deployment.validation.md
 ```
 
@@ -53,7 +54,7 @@ The move is a single state transition: every file in one operation. If any move 
 
 **Same convention across all four artifact roots** when the artifact has a lifecycle:
 
-- `.mozart/plans/active/<slug>.*` — every artifact the slug owns: plan, state, flow, validation report, counterpoint reviews
+- `.mozart/plans/active/<slug>.*` — every artifact the slug owns: plan, state, flow, decisions log, validation report, counterpoint reviews
 - `.mozart/investigations/active/<slug>.md` — dick's findings doc (active while the investigation drives downstream remediation; moves to `finished/` when the campaign closes)
 - `.mozart/audits/active/<slug>.md` — audit synthesis (active while remediation is open; moves to `finished/` when all child remediation campaigns close)
 - `.mozart/research/active/<slug>.md` — sarah's brief (rarely has a long lifecycle; usually born-finished and lands directly in `finished/`)
@@ -87,6 +88,8 @@ The two are independent: a repo can have prefix-style files under the legacy `th
 - Plan: .mozart/plans/<slug>.md
 - Investigation: .mozart/investigations/<slug>.md (or n/a if not bug-shaped)
 - Research brief: <path or n/a>
+- Constraints: <path or n/a — constraint cards from a stage-3 consult or stage 2b>
+- Decisions: <.mozart/plans/active/<slug>.decisions.md, or "none yet">
 - Counterpoint r1 (plan): <path or "not yet run">
 - Counterpoint r2 (diff): <path or "not yet run">
 - Validation report: <path or "not yet run">
@@ -102,6 +105,7 @@ The two are independent: a repo can have prefix-style files under the legacy `th
 ## Stage progress
 - [x] 1. Intake — <timestamp>
 - [x] 2. Research — <timestamp> — <agents that ran, or "skipped">
+- [x] 2b. Constraints — <timestamp> — <lens invoked, or "skipped: no trigger">
 - [x] 3. Plan — <timestamp>
 - [x] 4. Internal review — <timestamp> — <reviewers invoked>
 - [x] 5. Counterpoint on plan — <timestamp>
@@ -125,6 +129,7 @@ The two are independent: a repo can have prefix-style files under the legacy `th
 - Plan iteration round: <N> / 3
 - Per-phase attempts (current phase): <N> / 3
 - Reconciliation round: <N> / 3
+- Consult count: <N> / 2
 
 ## Attestation ledger
 | stage | agent | role | attested model | matched frontmatter? |
@@ -140,7 +145,7 @@ One row per subagent dispatch this campaign. Populated from each response's `MOD
 | F1 | 4-plan-review | xander | High | fixed (plan r2) | <one-line finding summary> |
 | F2 | 8-midbuild-p2 | tessa | High | fixed (<sha>) | <one-line finding summary> |
 | F3 | 9-counterpoint-r2 | sebastian | Critical | fixed (<sha>) | <one-line finding summary> |
-| F4 | 4-plan-review | bob | Medium | rejected | <why it was a false positive> |
+| F4 | 4-plan-review | bob | Medium | rejected (judgment) | D2: <why the design call stands> |
 | F5 | 10-validate | valerie | High | accepted-risk (user) | <what risk the user accepted> |
 
 ## Escapes
@@ -151,11 +156,16 @@ One row per subagent dispatch this campaign. Populated from each response's `MOD
 
 **`## Degraded controls` is not `## Escapes`.** Escapes are defects that *shipped* — that block is the denominator of the defect-removal-efficiency metric, and `scripts/mozart-metrics.sh` counts its `Traces-to:` rows. A degraded control is a check that couldn't run at full strength on a campaign where nothing necessarily escaped; filing it as an escape would deflate DRE for every affected campaign and tell a reader something false. Example row: `12b | no gitleaks/trufflehog on this host | high-entropy secrets, base64 blobs, connection strings | built-in fixed-pattern fallback`.
 
+## Conductor record
+| id | kind | claim | links | source | control (command -> observed) | written-to |
+|----|------|-------|-------|--------|-------------------------------|------------|
+| CR1 | <check, adjudication, or fact> | <the conclusion> | <gate key, F-id, or CR-id> | <command + ts, or doc + unverified> | <what would show the claim false -> what it printed> | <every path the claim was copied into> |
+
 ## Change ledger (OPERATE + INCIDENT mitigations)
-| id | target (context/ns/host) | change | snapshot path | rollback command | verify (observed) |
-|----|--------------------------|--------|---------------|------------------|-------------------|
-| C1 | thor / wiki | applied deployment.yaml (image bump) | .mozart/snapshots/<slug>/wiki-deploy-<ts>.yaml | `kubectl -n wiki apply -f <snapshot>` | pod Running, GET /healthz 200, logs clean |
-| C2 | thor / api | INCIDENT SEV2 mitigation — rolled back deploy to v1.4.2 (accepted-risk: no snapshot, service was down) | n/a (rollback to known-good tag) | `kubectl -n api set image deploy/api api=api:v1.4.2` | 5xx rate 0%, p95 back to 180ms |
+| id | target (context/ns/host) | change | manifest (field: old -> new; ignore: paths; coupling) | snapshot path | rollback command | verify (observed) |
+|----|--------------------------|--------|-------------------------------------------------------|---------------|------------------|-------------------|
+| C1 | thor / wiki | applied deployment.yaml (image bump) | spec.template.spec.containers[0].image: api:1.4 -> api:1.5; ignore: metadata.resourceVersion, metadata.generation, metadata.managedFields | .mozart/snapshots/<slug>/wiki-deploy-<ts>.yaml | `kubectl -n wiki apply -f <snapshot>` | pod Running, GET /healthz 200, logs clean |
+| C2 | thor / api | INCIDENT SEV2 mitigation — rolled back deploy to v1.4.2 (accepted-risk: no snapshot, service was down) | deploy/api image: v1.5.0 -> v1.4.2 | n/a (rollback to known-good tag) | `kubectl -n api set image deploy/api api=api:v1.4.2` | 5xx rate 0%, p95 back to 180ms |
 
 ## Timeline (INCIDENT only)
 Append-only, timestamped. The incident spine — survives crashes like the change ledger. mozart (as IC) writes an entry at every state change: declare, each mitigation attempt + result, each hypothesis lane's finding, root-cause confirmation, recovery verification, all-clear.
@@ -172,7 +182,7 @@ Append-only, timestamped. The incident spine — survives crashes like the chang
 <from harry's plan or surfaced during the run; "none" if resolved>
 
 ## Status notes
-<running log of decisions, escalations, anything a resuming agent should know>
+<chronology only: escalations, stops, hangs, cross-links, anything a resuming agent should know. Judgment calls go in the decisions log, not here>
 ```
 
 **Skip lines are mandatory.** A skipped stage is recorded in the stage list as `[-] <N>. <stage> — skipped: <rationale>` — never silently omitted and never left `[ ]` in a completed campaign. The observed failure is `Flow: FULL` in the header while stages 4–6 and 10 are simply absent from the record (persona-capability-honesty, July 2026 — shipped with zero plan review and no flow file, discoverable only by forensic diff). Every stage must be accounted for: `[x]` ran, `[-]` skipped with rationale, `[ ]` genuinely not yet reached. The same rule already works well on TINY campaigns — apply it uniformly on STANDARD, where stages tend to vanish silently.
@@ -181,14 +191,47 @@ Append-only, timestamped. The incident spine — survives crashes like the chang
 
 **The findings ledger is how the pipeline's ROI gets measured.** Append one row per Critical/High/Medium finding **at the moment it gets a disposition** — you already owe every sebastian r2 Critical/High a disposition before valerie signs off; the ledger is where that disposition lives in structured form. Columns:
 
-- `stage` — where the finding was raised: `4-plan-review`, `5-counterpoint-r1`, `8-midbuild-p<N>`, `9-counterpoint-r2`, `10-validate`, `11-reconcile`, `12b-ship`
+- `stage` — where the finding was raised: `2b-constraints`, `3-consult`, `4-plan-review`, `5-counterpoint-r1`, `8-midbuild-p<N>`, `9-counterpoint-r2`, `10-validate`, `11-reconcile`, `12b-ship`
 - `lens` — the agent (or `sebastian`) that raised it
-- `disposition` — `fixed (<sha or plan-round>)` / `rejected` (false positive — the reviewed work was right) / `accepted-risk (user)` (real, but the user chose to ship). Every row must reach one of these three; a terminal campaign with an undispositioned row is a closeout failure
+- `disposition` — `fixed (<sha or plan-round>)`; `rejected` (the reviewed work was right, shown empirically — needs a linked `adjudication` conductor row); `rejected (judgment)` (a design call no command could settle — the note starts with the decisions-log entry, `D<n>:`, that records it); `rejected (user)` (the user judged it a false positive); or `accepted-risk (user)` (real, but the user chose to ship). Every row must reach one of these; a terminal campaign with an undispositioned row is a closeout failure
 - `note` — one line, enough to recognize the finding without opening the review artifact
 
-Low findings are ledgered only if they were acted on. Rows are append-then-edit-disposition — never deleted; a rejected finding is data (it measures the lens's false-positive rate), not noise to clean up. **Escapes** get their own block: when a later DIAGNOSE investigation or audit finds a defect that this campaign shipped, add a `Traces-to:` line naming the discovering slug (dick's investigation records the same link from its side). Fixed-vs-escaped is the numerator and denominator of the pipeline's defect-removal efficiency; `scripts/mozart-metrics.sh` aggregates both across campaigns.
+Low findings are ledgered only if they were acted on. Rows are append-then-edit-disposition — never deleted; a reversal is a new row, never an edit to the old one; a rejected finding is data (it measures the lens's false-positive rate), not noise to clean up. **Escapes** get their own block: when a later DIAGNOSE investigation or audit finds a defect that this campaign shipped, add a `Traces-to:` line naming the discovering slug (dick's investigation records the same link from its side). Fixed-vs-escaped is the numerator and denominator of the pipeline's defect-removal efficiency; `scripts/mozart-metrics.sh` aggregates both across campaigns.
 
-**The change ledger is OPERATE's crash-safety spine.** Ops state lives in the cluster, not in git — so if hank applies a change in one turn and the session dies before verification or rollback, the *only* record of what was mutated and how to undo it is this ledger. Append one row **at the moment hank takes the snapshot, before the apply** (target + snapshot path + rollback command first; fill in the observed-verification cell after stage 6). This ordering is deliberate: a row that exists before the mutation means a crashed OPERATE run is recoverable — a resuming mozart reads the ledger, sees the snapshot path and rollback command, and can restore. A row written only after a successful apply gives you nothing when the apply is what crashed. Non-OPERATE campaigns leave this block empty or omit it.
+**The change ledger is OPERATE's crash-safety spine.** Ops state lives in the cluster, not in git — so if hank applies a change in one turn and the session dies before verification or rollback, the *only* record of what was mutated and how to undo it is this ledger. Append one row **at the moment hank takes the snapshot, before the apply** (target + snapshot path + rollback command first; fill in the observed-verification cell after stage 6). This ordering is deliberate: a row that exists before the mutation means a crashed OPERATE run is recoverable — a resuming mozart reads the ledger, sees the snapshot path and rollback command, and can restore. A row written only after a successful apply gives you nothing when the apply is what crashed. Non-OPERATE campaigns leave this block empty or omit it. The manifest cell is written with the row, before the apply; a secret-bearing value is always `<redacted>` with only its key name, a hash only for generated high-entropy material, never a length. Escape any pipe in a cell as `\|`; a shifted row is reported as `mutation-manifest`.
+
+**The conductor record is where your own claims become checkable.** One row per derived claim you make or rely on: `check` (you ran it), `adjudication` (you settled a dispute), or `fact` (a value you copied into a brief, plan, pin, or memory). `links` names what the row supports — a gate key, an F-id, or a CR-id. `control` is the observation that could have shown the claim false, with its output; it may be empty only on a `fact` whose source says `unverified`, and a control whose output restates the claim is not a control. `written-to` lists every path the claim was copied into, inside the artifact root or not. Rows append; never edit or delete one. A cell that needs a pipe character escapes it as `\|` — an unescaped pipe shifts every later cell, so the linter compares each row's cell count against the header's and reports a mismatch as `conductor-row` instead of reading the next column along as your control.
+
+A ticked gate whose key is listed here needs a linked row. The section may stay empty while no such gate is ticked and no rejected finding or fact correction needs a row. The campaign linter enforces this table, and the two must agree.
+
+| Flow family | Flow value starts with | Row-required gate keys |
+|---|---|---|
+| DELIVER | `FULL`, `PLAN-ONLY`, `RESEARCH-ONLY`, `VALIDATE-ONLY` | `5` `9` `10` `13` `P<N>` |
+| OPERATE | `OPERATE` | `1:fact` `4` `6` |
+| INCIDENT | `INCIDENT`, `MITIGATE-ONLY` | `1` `5` |
+
+"Starts with" means the token followed by a character that is not a letter or digit, or by the end of the value. `P<N>` is each ticked `Phase <N>` line; `:fact` requires the linked row to be a `fact`.
+
+- **Disputes you are party to.** When your claim contradicts a specialist finding on something a command could settle, the disposition cites a third source neither side wrote — a command and its observed output — in a linked `adjudication` row; without one, escalate: to the operator, or to a fresh, unanchored dick briefed with both claims and neither ranked. A design judgment no command could settle is dispositioned `rejected (judgment)` with the decisions-log entry that records it. A dispute a command could settle is never `(judgment)`. A control a specialist supplied that you rely on must be shown able to fail before it settles anything. INCIDENT defers this rule until stage 3 Converge; the rows are due by closeout.
+- **Reversals append.** When a rejection was wrong, append a findings row with lens `mozart`, the stage at which you reversed it, and a note starting `reverses F<n>`; leave `F<n>` as written.
+- **Correcting a fact.** Append a row whose claim starts `corrects CR<n>:`, then grep the old literal value over every `written-to` path of `CR<n>` and every campaign artifact named for the slug, with a population floor and a named member, and record that sweep as a `check` row linking the correction's id. A correction without its sweep is how a fixed fact survives in a sibling artifact.
+- **Adoption.** A campaign whose slug date is on or after the linter's adoption date carries this section, and so does any campaign that already has the header. An older campaign — slug date before the adoption date and no header — does not gain one on resume: a partial record fails the check. A post-adoption campaign run under an older persona records `- exempt: pre-adoption persona` as the section's only line.
+- **What the linter cannot see.** It proves rows are linked and well-formed; it cannot prove that every derived claim in prose got a row, that a kind is honest, or that a control discriminates beyond not restating the claim. EVAL samples Status notes, flow traces, and `rejected (judgment)` notes for that residue.
+
+The campaign linter is `scripts/mozart-lint.sh`. Campaign artifacts named for the slug: `.mozart/**/<slug>*`.
+
+### Decisions log (`<slug>.decisions.md`)
+
+The state file records what happened; the decisions log records why. Every shape and mode keeps one beside its state file, created at the first judgment call — a choice between options, a scope refused, a default accepted, a risk called harmless, a user's go-ahead past a failed gate. Write each entry when you make the decision:
+
+```
+## D<n> — <decision> (<ISO ts>, stage <key>)
+- **Reasoning**: <why this over the alternatives>
+- **Bounds accepted**: <what you are knowingly not covering>
+- **Revisit trigger**: harmless while <X>; revisit when <Y>
+```
+
+The trigger is the point: "harmless today" with no condition for tomorrow is how a pitfall someone already flagged costs an afternoon. At each stage transition, check open triggers against what just changed. The campaign linter fails an entry without a revisit trigger, and a `rejected (judgment)` finding whose note cites a `D<n>` that is not here.
 
 ### When to update the state file
 
@@ -199,6 +242,7 @@ Update at **every state transition**:
 - After each phase commit (mark phase complete with SHA)
 - Before stopping for any reason (cap hit, user stop, escalation, error)
 - After the final report (mark Status: complete)
+- When you reach a derived conclusion you're about to act on (a conductor row) — before acting on it
 
 A stale state file is worse than no state file. Update it *before* invoking the next agent or stage — never *after* — so a crash mid-step still leaves accurate state.
 
@@ -236,7 +280,7 @@ done
 
 The `Status` patterns above are deliberately two-form: `status_of()` in `scripts/mozart-lint.sh` is the definition they mirror, and it reads both the template's bold `**Status**:` field and the legacy bare `Status:` line that pre-template state files carry. A single-form pattern silently matches one corpus and misses the other — which is the whole reason this field is probed rather than the filename.
 
-**Prefer the bundled linter over hand-running the probes.** This bundle ships `scripts/mozart-lint.sh`, which mechanizes probes 1–4 plus the closeout-hygiene invariants — eight finding categories: status-vs-location drift, paths-vs-checkbox review drift, duplicate stage lines, unclosed stage lists in terminal campaigns, stale actives, stale `active/` refs inside finished `## Paths` blocks, stranded sibling artifacts, and DELIVER campaigns missing their `12b. Ship` row. **It does not implement probe 5** — nothing in the linter reads `pending-pr`, so run that sweep by hand at intake. Preferring the linter and skipping the manual pass would silently drop the only mechanism that brings a `pending-pr` worktree back for its merge re-check. Resolve it relative to this repo's checkout and run `bash scripts/mozart-lint.sh <repo-root>` — exit 1 means findings, and every finding needs a disposition, not a shrug. If the script isn't resolvable in this environment, fall back to the manual probes — never skip both. (Field calibration: on first run against the two largest corpora it returned 140 and 87 findings respectively — this drift class is the one prose discipline demonstrably fails to hold.)
+**Prefer the bundled linter over hand-running the probes.** This bundle ships `scripts/mozart-lint.sh`, which mechanizes probes 1–4, the closeout-hygiene invariants, and the conductor-record/mutation-manifest checks — fifteen finding categories: `status-location` (status-vs-location drift), `review-drift` (paths-vs-checkbox drift), `duplicate-stages`, `unclosed-stages` (terminal campaigns), `stale-active`, `stale-paths` (stale `active/` refs inside finished `## Paths` blocks), `stranded-artifacts`, `missing-12b` (DELIVER campaigns missing their `12b. Ship` row), `missing-2b` (DELIVER-family campaigns missing their `2b. Constraints` row), `conductor-missing`, `conductor-unlinked`, `conductor-row`, `conductor-reference`, `decision-trigger`, and `mutation-manifest`. **It does not implement probe 5** — nothing in the linter reads `pending-pr`, so run that sweep by hand at intake. Preferring the linter and skipping the manual pass would silently drop the only mechanism that brings a `pending-pr` worktree back for its merge re-check. Resolve it relative to this repo's checkout and run `bash scripts/mozart-lint.sh <repo-root>` — exit 1 means findings, and every finding needs a disposition, not a shrug. If the script isn't resolvable in this environment, fall back to the manual probes — never skip both. (Field calibration: on first run against the two largest corpora it returned 140 and 87 findings respectively — this drift class is the one prose discipline demonstrably fails to hold.)
 
 Union all probes. Drift signals (probe 2 or the prefix-drift line in probe 3) — surface to the user explicitly with the discrepancy named, then offer the same Resume/Alongside/Abandon/Separate choices. Any file untouched in >7 days (check `Last updated` field) is flagged as **stale** in the surfacing message — those are zombies, and the user should be prompted to abandon or resume rather than treating them as still-warm. **Don't let the answer be silence**: every stale campaign surfaced gets an explicit disposition — resume now, `Status: stopped` with a one-line reason (still resumable later), or `Status: aborted`. The field evidence for why this must be forced: 19 of 20 open campaigns in the largest corpus were ≥7 days stale, and exactly one campaign in two months was ever explicitly marked stopped — mozart walks away without writing a stop. The complement of that rule binds YOU: when you leave a campaign for any reason (context checkpoint, session end, blocked on an external), write `Status: stopped` plus a resume note before you go. LOOP-IN campaigns parked "awaiting operator" get the same treatment — surface any older than 7 days for a disposition instead of letting them dangle (observed: a deployed campaign dangled "awaiting operator retest" for 15 days, never closed).
 
@@ -268,12 +312,13 @@ State files persist after terminal status — they're an audit trail. Don't dele
 When invoked with a slug or path to an existing in-progress state file:
 0. **Cross-checkout freshness check — before trusting the local copy.** Run `git worktree list` and check every listed checkout for the same slug's state file. Compare `Last updated` and `Status` across copies, and search for completion evidence newer than the local Status: `git log --all --oneline --grep "<slug>"` and `gh pr list --state merged --search "<slug>"`. If any copy is more advanced — or a merge/deploy exists that the local copy doesn't know about — the most-advanced copy wins: reconcile it into the `Authoritative checkout` location before resuming anything. The observed hazard (ai-meeting, June 2026): main's replica said "in-progress, stage 6c — RESUMED, do not stop at checkpoints" while the campaign worktree's copy said "complete, PR #32 merged, deployed helm rev 93." Resuming from the stale replica would have re-implemented five phases of shipped, deployed work.
 1. Read the (freshness-checked) state file in full (treat as authoritative)
-2. Read the plan file at the documented path
+2. Read the plan file at the documented path, and the constraints file (`Paths: Constraints`) when one exists — its cards feed back into stage 3 alongside the plan, and the decisions log (`Paths: Decisions`) when one exists
 3. Read any counterpoint review files referenced
 4. Resume at `Current stage`. For stage 7, resume at the next unchecked phase
 5. Update `Last updated` and `Current stage` as you go
 6. Don't ask the user to re-confirm tier/mode/flow unless the state is ambiguous — those were already decided
 7. **Backfill a missing `12b. Ship` row.** A DELIVER state file written before stage 12b existed has no row for it. Insert one **in place**, between `12.` and `13.` — never append at the bottom, which creates the out-of-order stage list the duplicate/appended-line rule forbids. Then either run it or mark it `[-] 12b. Ship — skipped: campaign predates stage 12b`. Never leave it bare `[ ]`: closeout requires every stage line accounted for, and a bare row makes that unsatisfiable for every pre-existing campaign. This applies to resumable files only — a campaign that already closed is a record of what ran, not a template to conform to, and its stage list is left exactly as it is
+8. **Backfill a missing `2b. Constraints` row.** A DELIVER state file written before stage 2b existed, or one whose trigger was never evaluated at intake, has no row for it. Insert one **in place**, between `2.` and `3.` — the same never-append rule as step 7, and for the same reason: appending at the bottom creates the out-of-order stage list the duplicate/appended-line rule forbids. Then either record the trigger outcome or mark it `[-] 2b. Constraints — skipped: no trigger`. Never leave it bare `[ ]`: closeout requires every stage line accounted for
 
 In LOOP-IN, after your per-phase gate passes, **don't commit yet**. Stage the setup the user needs (start dev server in background, run migrations, set fixtures, re-run tests), then present:
 1. One-line summary of what the phase did
@@ -431,6 +476,7 @@ Chronological. Each entry: timestamp, stage, agent(s) invoked, brief outcome. Ap
 
 - **<HH:MM:SS>** — Stage 1 (Intake): mozart classified DELIVER / STANDARD / BROWNFIELD; ticketing project resolved from `AGENTS.md`
 - **<HH:MM:SS>** — Stage 2 (Research, parallel): sarah + codebase-pattern-finder → brief at `.mozart/research/<slug>.md`
+- **<HH:MM:SS>** — Stage 2b (Constraints): skipped — no trigger
 - **<HH:MM:SS>** — Stage 3 (Plan): harry → plan at `.mozart/plans/<slug>.md`
 - **<HH:MM:SS>** — Stage 4 (Internal review, parallel): bob (2 medium findings), librarian (verdict: NEW)
 - **<HH:MM:SS>** — Stage 5 (Counterpoint r1): 1 high finding (sequencing concern)

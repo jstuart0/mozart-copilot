@@ -74,6 +74,7 @@ The literal model IDs stamped per role live in `.github/mozart/config/model-map.
 1.  Intake          — mozart restates, classifies tier, context, and mode; confirms flow; creates state file + flow sketch;
                       cuts the campaign worktree (../<repo>-worktrees/<slug>, branch campaign/<slug>)
 2.  Research        — sarah (+ codebase-pattern-finder, web-search-researcher) in parallel — OPTIONAL, skipped in TINY
+2b. Constraints     — xander or ian, CONDITIONAL — narrow authorization/guarantee trigger only; skipped by default (see trigger table below)
 3.  Plan            — harry drafts → .mozart/plans/<slug>.md
 4.  Internal review — bob (always) + librarian (BROWNFIELD) + xander/dexter/ruby/otto/tessa/percy (conditional, parallel)
 5.  Counterpoint on plan — sebastian's cross-model review; mozart persists it (sebastian holds neither `edit` nor `execute`) → <slug>.counterpoint-r1-plan.md
@@ -97,6 +98,7 @@ The literal model IDs stamped per role live in `.github/mozart/config/model-map.
 | Stage | TINY | STANDARD | HEAVY |
 |---|---|---|---|
 | Research (2) | skip | optional | optional |
+| Constraints (2b) | skip | conditional | conditional |
 | Plan-review fan-out (4) | skip | conditional | conditional |
 | Counterpoint r1 on plan (5) | skip | run | run |
 | Mid-build specialists (8) | skip | conditional | ian + xander mandatory; others conditional |
@@ -117,6 +119,15 @@ The literal model IDs stamped per role live in `.github/mozart/config/model-map.
 | dexter | refactors, shared utilities, new abstractions, code-health debt |
 | ruby | UI/UX surface, frontend components, accessibility, design system |
 | otto | k8s manifests, Helm, Ingress, Service, Deployment, NetworkPolicy, RBAC, infra YAML |
+
+### Constraints triggers (stage 2b — conditional push, narrow)
+
+| Lens | Trigger |
+|---|---|
+| xander | The task changes **who may do what** — an authorization rule, trust boundary, privilege level, credential path, or the identity an action runs as |
+| ian | The task changes behavior covered by a guarantee **already published in this repo** (README / PRIVACY / SECURITY / API docs / CHANGELOG) that the change could falsify |
+
+Deliberately **narrower** than the stage-4 and stage-8 xander triggers above — those also fire on dependency bumps and CI/CD workflow edits, which produce no task-derivable authorization rule. Evaluated once, against the task statement, at intake — never re-derived mid-plan.
 
 ### Mid-build specialist triggers (stage 8 — review the slice before commit)
 
@@ -183,15 +194,15 @@ For changing or debugging a **live system** directly — installs, config change
 **DELIVER-vs-OPERATE boundary:** change reaches the system through a git/CI/Argo pipeline → DELIVER (otto reviews, jackson writes, the pipeline deploys). Change lands straight on the running system (`kubectl apply`, `helm upgrade`, `apt install`, in-place config edit, restart) → OPERATE (otto plans, hank applies, verified empirically). Prefer the GitOps/DELIVER path when one exists.
 
 ```
-1. Intake+pin  — mozart restates change, PINS the target (context/ns/host), classifies mode+tier,
-                 runs the drift sanity check, RESOLVES THE VERSION on install/upgrade;
-                 creates state file + flow sketch (Shape: OPERATE)
+1. Intake+pin  — mozart restates change, PINS the target from BOTH SIDES (documented + live-observed:
+                 context/ns/host), classifies mode+tier, runs the drift sanity check,
+                 RESOLVES THE VERSION on install/upgrade; creates state file + flow sketch (Shape: OPERATE)
 2. Recon       — dick + otto (infra-debug / migration modes only; skipped for clean install/config)
-3. Change plan — otto AUTHORS the plan: exact commands, per-step dry-run, snapshot step,
+3. Change plan — otto AUTHORS the plan: exact commands, per-step dry-run, snapshot step, mutation manifest,
                  rollback procedure, blast radius/ramifications (+ ian on HEAVY for code-side consumers)
 4. Pre-flight  — hank runs dry-runs + takes snapshots (records them BEFORE applying);
                  HEAVY adds xander (security surface) + otto (immutable-field/server-dry-run) + sebastian on the change plan
-5. Apply       — hank executes one step at a time, confirming each before the next
+5. Apply       — hank executes one variable per mutation (its manifest), confirming each before the next
 6. Verify      — hank confirms empirically (observed, not expected); fills the change ledger
 7. Record      — scott writes the runbook + rollback record to repo docs / wiki
                   └─ OPERATE-PLAN-ONLY: stop after stage 3; otto's change plan is the deliverable
@@ -204,9 +215,10 @@ For changing or debugging a **live system** directly — installs, config change
 - Never mutate without a snapshot and a recorded rollback command — TINY is no exception.
 - **Resolve versions, never recall them.** Every install/upgrade states the resolved upstream latest stable, what the install source actually lands, and the gap — before it runs. Chart/distro/community-image defaults lag upstream by months or a full major version routinely; accepting one silently is how a fresh install lands a year out of date. A major-version gap without a stated reason is a stop.
 - Server-side dry-run for k8s (`--dry-run=server`), always — client-side doesn't catch immutability/admission failures.
-- Pin the target; check every mutating command against it. A context mismatch is a stop, never a silent switch.
+- Pin the target from both sides — documented and live-observed — and check every mutating command against it. A context mismatch is a stop, never a silent switch.
 - Observed, not expected — every "it works" carries the evidence behind it.
 - Irreversible or out-of-authority steps escalate before apply.
+- One variable per mutation, with a mutation manifest — field, old value, new value, `coupling:` for a moved-together set, secret-bearing values `<redacted>`.
 
 ## INCIDENT pipeline
 
@@ -232,7 +244,7 @@ For responding to a **live outage** — service is down or badly degraded *right
 **Incident-mode rules:**
 - Mitigate first, understand second — a known-good rollback beats a perfect diagnosis when service is down.
 - One hand on the live system (hank); investigators parallelize read-only.
-- Verify each mitigation before stacking another; roll back what didn't help.
+- One variable per mitigation, with a mutation manifest recorded in the timeline + change ledger; verify each before stacking another; roll back what didn't help.
 - Mitigated ≠ fixed — always say which; the durable fix is deferred, not skipped.
 - The timeline is the source of truth — append at every state change.
 - Blameless post-mortem on SEV1/2 — output is action items, not attribution.
@@ -244,6 +256,7 @@ For responding to a **live outage** — service is down or badly degraded *right
 - **State file**: `.mozart/plans/<slug>.state.md` (durable pipeline state — survives crashes, sessions, context resets)
 - **Flow sketch**: `.mozart/plans/<slug>.flow.md` (Mermaid diagram + chronological stage trace + agent participation summary)
 - Research brief: `.mozart/research/<slug>.md` (when substantial)
+- Decisions log: `.mozart/plans/<slug>.decisions.md` (from the first judgment call)
 - Counterpoint round 1 (plan): `.mozart/plans/<slug>.counterpoint-r1-plan.md`
 - Counterpoint round 2 (diff): `.mozart/plans/<slug>.counterpoint-r2-diff.md`
 - **Validation report**: `.mozart/plans/<slug>.validation.md` (valerie's stage-10 report, written to disk as well as returned — reconciliation rounds append to it)

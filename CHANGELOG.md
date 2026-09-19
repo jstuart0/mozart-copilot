@@ -8,6 +8,125 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Added — conductor self-verification: mozart's own claims become checkable
+
+Ported from mozart-orchestration campaign
+`2026-09-17-deliver-conductor-self-verification`. Mozart's derived
+conclusions — a check it ran, a dispute it settled, a fact it relied on —
+now carry the same M2/M7 discipline every other check does.
+
+- **`## Conductor record`** state-file section (`manual/STATE.md`): one row
+  per derived claim, with the control that would have shown it false and
+  where the claim was written. A ticked gate whose key is row-required needs
+  a linked row; the required keys are enumerated per flow family.
+- **Decisions log** (`<slug>.decisions.md`, from the first judgment call):
+  the state file records what happened, the decisions log records why. A
+  failed gate the user waives is recorded there and cited by D-id, not
+  buried in Status notes.
+- **`rejected (judgment)`** disposition plus the reversal rule (a reversal
+  is a new findings row, never an edit to the old one).
+- **Adjudicating dick** — a fresh, unanchored dispatch briefed with both
+  claims and neither ranked, for a dispute where mozart's own claim is one
+  side.
+- **Mutation manifest** on every live mutation (`manual/OPERATE.md`,
+  `manual/INCIDENT.md`, `hank.agent.md`, `otto.agent.md`): field, old value,
+  new value — one variable per mutation, `coupling:` for a set that must
+  move together, an `ignore:` list of literal field paths the read-back may
+  skip, `unverifiable: write-only` with its alternative observable, and
+  every secret-bearing value as `<redacted>`.
+- **The OPERATE pin is two-sided** — what the repo documents *and* what a
+  live command observes.
+
+### Added — lint and metrics
+
+`scripts/mozart-lint.sh` gains six finding categories (fifteen total):
+`conductor-missing`, `conductor-unlinked`, `conductor-row`,
+`conductor-reference`, `decision-trigger`, `mutation-manifest` — and the
+`MOZART_LINT_CONDUCTOR_SINCE` fixture hook, which prints
+`conductor adoption date overridden: <value>` as its first line whenever it
+is set, so an overridden run can never be mistaken for a normal one.
+`scripts/mozart-metrics.sh` gains the `== conductor ==` block and stops
+counting `<placeholder>` template rows as real findings.
+
+A committed fixture corpus (`tests/fixtures/campaign/conductor/`, a byte
+copy of orchestration's) and five CI steps in `check.yml` run the behaviour
+loop: lint triples against `expected.tsv`, the override-visibility control
+in both directions, the metrics cases whole-line, and a section-scoped prose
+check over every site the contract names.
+
+### Fixed — reconciliation round 1 (F47-F52, mirrored from source's external pre-merge review)
+
+Checks K/L claimed the same current+legacy scope as Checks C/D and did not have
+it: the legacy prefixless flat glob (`plans/<date>-<slug>.state.md`) was missing,
+and the adoption date was read off the raw basename, so every `active-`/
+`finished-` prefixed file classified as pre-adoption regardless of its date. A
+post-adoption state file with no `## Conductor record` linted clean in either
+layout. The fixture corpus gains one fixture per layout — six, including the
+legacy `thoughts/shared/` root — and `check.yml` now asserts each layout is
+populated rather than counting files in two directories.
+
+Conductor and change-ledger rows were split on a raw `|`, so a `source` cell
+holding a shell pipeline shifted every later cell and an **empty control parsed
+as filled**. `STATE.md` said "no literal pipe"; nothing enforced it. Both tables
+now honour `\|` as an escaped pipe and reject any row whose cell count disagrees
+with its header (`conductor-row` / `mutation-manifest`), with the finding
+deferred to `END` so it stays behind PD1's adoption gate.
+`scripts/mozart-metrics.sh` applies the same rule and prints the count of rows it
+skipped instead of tallying a shifted row as controlled.
+
+Roots and the file list were whitespace-delimited strings in
+`scripts/mozart-metrics.sh`, and Check F word-split an unquoted `$(find ...)`, so
+a checkout under a path containing a space reported "no state files" and a stale
+campaign there went unreported. Both are NUL-delimited arrays now.
+
+PD1's adoption gate has two limbs — slug date on or after the cutoff, **or** a
+header already present — and `decision-trigger` implemented only the first, so a
+campaign carrying a conductor record with a pre-cutoff slug date had its rows
+checked while its decisions log went unchecked.
+
+`check.yml` also compares the corpus's **total** emitted lint lines against
+`expected.tsv`, not just the filtered K/L/J set: `2099-07-29-noflow-j` was firing
+`missing-12b` alongside its intended `missing-2b`, so it was not failing only for
+its intended reason and no step could see it. A new `.gitattributes` exempts the
+CRLF fixture (its carriage returns are the fixture) and the generated
+`tests/lint-upstream.diff` from `git diff --check`; the rest of the corpus was
+cleaned rather than exempted.
+
+Category count is unchanged at fifteen — every fix reuses an existing category.
+`scripts/check-lint-parity.sh` and the A16 `diff -r` are both clean against
+source at this commit.
+
+### Added — catch-up with mozart-orchestration 0.3.0
+
+Items this port had not yet received:
+
+- **Stage 2b (Constraints)** — the conditional, narrow pre-plan push:
+  trigger evaluation at intake, the trigger table, the constraint card, the
+  `Paths: Constraints` state row, the stage trace, and the resume backfill
+  rule. `xander.agent.md` and `ian.agent.md` carry their 2b markers;
+  `.github/mozart/PIPELINE.md` carries the trigger table.
+- **`## Consult requested`** on `harry.agent.md` — the stage-3 pull route,
+  with its form, the four eligible lenses, the two-per-campaign cap, and the
+  unattributed-requirements rule carved to
+  `.github/mozart/agents/harry/PLAN-TEMPLATE.md` for headroom.
+- **Check J (`missing-2b`)** in `scripts/mozart-lint.sh`, gated to the
+  DELIVER flow family.
+- **`jackson.agent.md`** gains the mid-build-authored-check bullet binding a
+  check invented during implementation to M2 and M7.
+
+### Changed
+
+- `scripts/mozart-lint.sh` is now equal to mozart-orchestration's, modulo an
+  allowlisted reviewer-label diff committed at `tests/lint-upstream.diff`;
+  `scripts/mozart-metrics.sh` is byte-identical to it. `scripts/check-lint-parity.sh`
+  codifies that comparison — it previously existed only as prose in the
+  campaign plan, and its allowlist could not admit the lowercase source side
+  of its own `codex-drift` -> `review-drift` rename, so it could never reach
+  a passing count on a correct port.
+- `mozart.agent.md` drops the "An unattended run needs a decision log" field
+  note — promoted into the decisions-log mechanism it described.
+
+
 ## [0.4.0] - 2026-09-13
 
 ### Added — field-notes harvest: four prose entries, three mechanisms, ported from mozart-orchestration

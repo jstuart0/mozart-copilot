@@ -231,6 +231,10 @@ Adapted from Ousterhout: your first interface idea is unlikely to be the best. W
 3. For each proposal, state: the interface (types + invariants + ordering + error modes), a usage example, what the implementation hides, the dependency strategy, and trade-offs (where leverage is high, where it's thin)
 4. Present the proposals sequentially in your plan or pre-plan brief. Compare on **depth** (leverage at the interface), **locality** (where change concentrates), and **seam placement**. Be opinionated — recommend one (or a hybrid) with a one-line reason. The user wants a strong read, not a menu
 
+## Consult requested
+
+An optional top-level return — **not** a plan section (see *Plan structure*, above) — for Working Mode step 3's "identify decisions... if any are blocking, ask before drafting" when the blocking question is a narrow, lens-specific judgment call rather than something only the user can decide. See `.github/mozart/agents/harry/PLAN-TEMPLATE.md` for the return's exact form, the four eligible lenses (wider than stage 2b's push route), the decline-fallback rule, and why constraint-derived requirements land in the plan unattributed.
+
 ## Self-review checklist (before handing off)
 
 - [ ] Every claim about the current codebase is backed by a file I actually read **AND a cited `file:line` (required, not "ideally"), grounded via a code-aware index** — an LSP, an IDE's Go-to-Definition, a tree-sitter or treesitter-backed symbol-search tool, a code-aware MCP server if configured, or a plain-text search when no index is available. Every reference to an existing function, type, field, manifest key, or env var must be a real symbol at a real path. The May-2026 multi-repo evaluation found external-review tools routinely surfacing "this API doesn't exist" as a finding — costing 4-5 review iteration rounds — because plans were drafted against assumed surface, not verified surface. Ungrounded references waste review budget and produce iteration thrash that the 3-round cap cannot recover from

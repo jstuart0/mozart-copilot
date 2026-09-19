@@ -80,7 +80,7 @@ The single most destructive class of ops error is running the right command agai
 - **Hosts**: confirm the hostname / IP you're `ssh`-ed into matches the plan's target before you install or edit anything.
 - **Databases**: confirm the connection string points at the intended instance and database before any DDL or destructive DML.
 
-If the context doesn't match what the plan expects, **stop and surface it.** Do not "fix" it silently by switching context and proceeding — the mismatch may mean the plan itself is wrong about the target.
+If the context doesn't match what the plan expects, **stop and surface it.** Do not "fix" it silently by switching context and proceeding — the mismatch may mean the plan itself is wrong about the target. Return the live target you observed — the context, host, instance, or cloud account and region — not just that it matched; mozart records both sides of the pin.
 
 ### 2. Dry-run — preview the change before it lands
 Where the tool supports it, preview the exact effect:
@@ -104,8 +104,10 @@ You cannot `git revert` a live-system change. Capture what you need to put it ba
 
 If you can't snapshot a change (genuinely irreversible operation), that is not a reason to skip the step — it's a reason to **stop and escalate to the user** with the irreversibility called out explicitly.
 
-### 4. Apply — one step at a time
-Execute the plan's commands in order. After each mutating step, confirm the expected intermediate effect before the next step. Don't fire a batch of `kubectl apply`s and check at the end — a failure in step 2 shouldn't be discovered after step 5 also ran against a now-inconsistent state.
+### 4. Apply — one variable per mutation
+Execute the plan's steps in order. Each mutating step carries its **mutation manifest** and changes only what it names: one field, a coupled set with its `coupling:` rationale, or — for a create or install — `created: <resource>` with its source digest. A step without a manifest, including a fix you would improvise mid-apply, goes back to otto or mozart first. In a manifest, a ledger row, and your narration, a secret-bearing value is always `<redacted>` with only its key name recorded; a hash is allowed only for generated high-entropy material (keys, tokens of at least 128 bits), and never a length.
+
+After each step, read the resource back (`kubectl get -o yaml`, the API's GET, the config file) and compare it with the snapshot. Every changed field must be a manifest field or a literal field path on the manifest's `ignore:` list — for example `metadata.resourceVersion`, `metadata.generation`, `metadata.managedFields`, `spec.template.metadata.annotations["x-injected"]` — never a category label. Status fields may be listed by literal path, except the conditions the change is expected to affect, such as rollout health and readiness, which you verify against their expected values. Every manifest field must show its new value; a field that cannot be read back is recorded `unverifiable: write-only` with the alternative observable that proves it landed. Anything else is a stop. A dry-run is not this check. Then confirm the expected effect before the next step — don't fire a batch and check at the end. Under a declared INCIDENT the read-back comparison runs once the mitigation's symptom check clears, no later than Converge, and never blocks a mitigation.
 
 ### 5. Verify — empirically, observed not expected
 This is where you earn trust. Prove the change did what it was supposed to, against the running system:
@@ -147,7 +149,7 @@ When mozart is running the **INCIDENT pipeline** and service is down, you are th
 
 - **You still record a rollback command** and tag the change `accepted-risk (incident)` in the change ledger — a mitigation you can't undo is still a stop.
 - **You still verify context** — a mitigation applied to the wrong cluster makes the incident worse. Pinned target discipline is absolute, incident or not.
-- **You still serialize** — you are the *single* hand on the live system during an incident (investigators run read-only in parallel; you do not run concurrent mutations). One lever at a time.
+- **You still serialize** — you are the *single* hand on the live system during an incident (investigators run read-only in parallel; you do not run concurrent mutations). One lever, one variable at a time: each mitigation records its mutation manifest in its timeline entry and change-ledger row, secret-bearing values `<redacted>`, and its read-back comparison runs once the symptom check clears — no later than Converge — without ever blocking the mitigation; a mismatch becomes a post-mortem finding.
 - **You still verify each mitigation before the next** — if a rollback/restart/failover didn't clear the symptom, undo it (its command is in the ledger) before trying the next lever. Don't stack unverified changes on a system that's already on fire.
 - Prefer the **reversible lever** (rollback to a known-good tag, failover, scale, flag-off) over an irreversible one. Irreversible mitigations still escalate to the IC first.
 

@@ -66,7 +66,7 @@ REVIEW_LABEL_RE='(Counterpoint|Codex|Claude)'
 
 # PD1/PD3/PD24. CONDUCTOR_SINCE defaults to the merge date (log D2); the
 # fixture-hook override is documented above and asserted by gate V11.
-CONDUCTOR_SINCE="${MOZART_LINT_CONDUCTOR_SINCE:-2026-09-18}"
+CONDUCTOR_SINCE="${MOZART_LINT_CONDUCTOR_SINCE:-2026-09-19}"
 CONDUCTOR_GATES_DELIVER="5 9 10 13 P"
 CONDUCTOR_GATES_OPERATE="1:fact 4 6"
 CONDUCTOR_GATES_INCIDENT="1 5"

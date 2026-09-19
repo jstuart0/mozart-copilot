@@ -122,6 +122,19 @@ the actions that consume them — `--min-agents` with `--map`/`--check-install`,
 and `apply_models.py`'s `--upstream-readme` with `--check-tiers` — otherwise the
 run exits `2` naming both flags.
 
+If you changed `scripts/mozart-lint.sh` or `scripts/mozart-metrics.sh`, also run
+the cross-repo parity check against a mozart-orchestration checkout:
+
+```bash
+bash scripts/check-lint-parity.sh /path/to/mozart-orchestration
+```
+
+`mozart-lint.sh` must equal orchestration's modulo the allowlisted reviewer-label
+diff committed at `tests/lint-upstream.diff`; `mozart-metrics.sh` must be
+byte-identical. It is deliberately **not** a CI step — CI has no second checkout,
+so it would be permanently red or vacuously green. It narrows the manual review of
+that diff; it does not replace it. `AGENTS.md` has the full rationale.
+
 If you changed a persona's output format, run it against a sample input and
 confirm the output matches the template. If you changed
 `.github/mozart/PIPELINE.md`, verify it stays consistent with

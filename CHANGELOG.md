@@ -44,7 +44,11 @@ now carry the same M2/M7 discipline every other check does.
 `conductor-reference`, `decision-trigger`, `mutation-manifest` — and the
 `MOZART_LINT_CONDUCTOR_SINCE` fixture hook, which prints
 `conductor adoption date overridden: <value>` as its first line whenever it
-is set, so an overridden run can never be mistaken for a normal one.
+is set, so an overridden run can never be mistaken for a normal one. Check L
+shares Check K's PD1 adoption boundary rather than carrying a second copy of
+it (F39), so a pre-adoption campaign's change-ledger rows are never flagged —
+including rows written before the manifest column existed — while a
+post-adoption campaign gets no grandfathering.
 `scripts/mozart-metrics.sh` gains the `== conductor ==` block and stops
 counting `<placeholder>` template rows as real findings.
 

@@ -23,9 +23,11 @@ Ported from mozart-orchestration campaign
   model-map role `reviewers` — the same role as every other conditional
   reviewer.
 - **`.github/mozart/agents/nina/CLOUD-READS.md`** — her read rules, carved
-  out under this edition's 30,000-character body cap. Upstream's body is
-  29,969 characters, 31 under the cap, so she could not ship inline here with
-  even the mandatory `## Model attestation` section added. The carve uses the
+  out under this edition's 30,000-character body cap. Upstream's body was
+  29,969 characters when this port was cut, 31 under the cap, so she could not
+  ship inline here with even the mandatory `## Model attestation` section added.
+  (Upstream's later re-freeze moved that body to 32,170 characters, which widens
+  the margin without changing the conclusion.) The carve uses the
   persona-private overflow convention (`.github/mozart/agents/<name>/`, as
   `scott/PR-AUTHORING.md` does), not `manual/`, which is the conductor's.
   Ported body: 12,883 characters.

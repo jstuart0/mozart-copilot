@@ -57,8 +57,8 @@ jobs:
       - name: Validator self-test (fixture corpus)
         run: python3 scripts/check_agents.py --self-test --forms
 
-      - name: Roster floor (raised to 22 in Phase 5 — step 25)
-        run: python3 scripts/check_agents.py --min-agents 22
+      - name: Roster floor (raised to 23 in the nina campaign; was 22 from Phase 5 — step 25)
+        run: python3 scripts/check_agents.py --min-agents 23
 
       - name: Manual carve is total (Phase 5 — step 21)
         run: python3 scripts/check_agents.py --check-carve tests/coverage-map.tsv
@@ -614,7 +614,7 @@ jobs:
           if [ "$rc" -ne 127 ]; then echo "expected 127 with no copilot on PATH, got $rc" >&2; exit 1; fi
 
       - name: Model map covers the roster and the allowlist (Phase 6 — step 30)
-        run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 22
+        run: python3 scripts/check_agents.py --map .github/mozart/config/model-map.jsonc --min-agents 23
 
       - name: Model stamp has no drift from the canonical map (Phase 6 — step 30)
         run: python3 scripts/apply_models.py --check
@@ -649,7 +649,7 @@ jobs:
       # ------------------------------------------------------------------
       - name: Map fixture — orphan role fails via both entry points, exactly 1 FAIL (Phase P10, D-G)
         run: |
-          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-orphan-role.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-orphan-role.jsonc --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
           n=$(printf '%s\n' "$out" | grep -c '^FAIL')
           if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
@@ -660,7 +660,7 @@ jobs:
 
       - name: Map fixture — map entry without agent file fails via both entry points, exactly 1 FAIL (Phase P10, D-G)
         run: |
-          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-unassigned-file.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-unassigned-file.jsonc --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
           n=$(printf '%s\n' "$out" | grep -c '^FAIL')
           if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
@@ -671,7 +671,7 @@ jobs:
 
       - name: Map fixture — agent file without map entry fails via both entry points, exactly 1 FAIL (Phase P10)
         run: |
-          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-uncovered-agent.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-uncovered-agent.jsonc --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
           n=$(printf '%s\n' "$out" | grep -c '^FAIL')
           if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
@@ -682,7 +682,7 @@ jobs:
 
       - name: Map fixture — undefined role fails via both entry points, exactly 1 FAIL (Phase P10)
         run: |
-          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-undefined-role.jsonc --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-undefined-role.jsonc --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
           n=$(printf '%s\n' "$out" | grep -c '^FAIL')
           if [ "$n" -ne 1 ]; then echo "check_agents --map: expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
@@ -693,11 +693,11 @@ jobs:
 
       - name: Map fixture — roster-floor violation via --agents-dir (Phase P10; check_agents.py --map only, --min-agents has no --validate-map counterpart)
         run: |
-          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc — $out" >&2; exit 1; fi
           n=$(printf '%s\n' "$out" | grep -c '^FAIL')
           if [ "$n" -ne 1 ]; then echo "expected exactly 1 FAIL, got $n — $out" >&2; exit 1; fi
-          printf '%s\n' "$out" | grep -qF -- '--min-agents requires >= 22' || { echo "missing roster-floor substring — $out" >&2; exit 1; }
+          printf '%s\n' "$out" | grep -qF -- '--min-agents requires >= 23' || { echo "missing roster-floor substring — $out" >&2; exit 1; }
 
       - name: Map fixture — silent retier is caught by --check-tiers (Phase P10; apply_models.py-only modifier)
         run: |
@@ -726,7 +726,7 @@ jobs:
           out=$(python3 scripts/check_agents.py --check-carve tests/coverage-map.tsv --agents-dir "$(mktemp -d)" 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 2 ]; then echo "expected exit 2 for --agents-dir + --check-carve, got $rc — $out" >&2; exit 1; fi
           printf '%s\n' "$out" | grep -qF -- '--check-carve' || { echo "message does not name --check-carve — $out" >&2; exit 1; }
-          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map tests/fixtures/map-roster-floor.jsonc --agents-dir tests/fixtures/roster-floor-agents --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "--map should still consume --agents-dir (expected exit 1), got $rc — $out" >&2; exit 1; fi
           printf '%s\n' "$out" | grep -qF 'tests/fixtures/roster-floor-agents' || { echo "--map did not walk the overridden roster — $out" >&2; exit 1; }
 
@@ -763,7 +763,7 @@ jobs:
           out=$(python3 scripts/apply_models.py --validate-map "$M" 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "validate-map: expected exit 1, got $rc — $out" >&2; exit 1; fi
           printf '%s\n' "$out" | grep -qF 'claude-sonnet-9.9' || { echo "gate did not name the offending value — $out" >&2; exit 1; }
-          out=$(python3 scripts/check_agents.py --map "$M" --min-agents 22 2>&1) && rc=0 || rc=$?
+          out=$(python3 scripts/check_agents.py --map "$M" --min-agents 23 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "check_agents --map: expected exit 1, got $rc — $out" >&2; exit 1; fi
           mmbak="$(mktemp)"
           cp .github/mozart/config/model-map.jsonc "$mmbak"

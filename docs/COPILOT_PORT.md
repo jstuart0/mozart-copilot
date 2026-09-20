@@ -706,7 +706,7 @@ mechanically checked, and this port does not claim they've passed:
   subdirectory-launch `cd`, VS Code discovery vs. reads, workspace-vs-user
   precedence, the hard-stop-under-a-winning-root case, and, highest-stakes,
   **whether a dispatched subagent inherits the wrapper's `--add-dir` grant**
-  (M9) — 21 of 22 agents are specialists, so a "no" answer changes how
+  (M9) — 22 of 23 agents are specialists, so a "no" answer changes how
   specialist-heavy work should be run. None of these are guessed at here;
   the campaign plan's Manual section is the authoritative checklist and
   records the observed answers once run.

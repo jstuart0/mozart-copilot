@@ -61,7 +61,7 @@ verification). The pull-consult return's exact form:
 
 ```
 ## Consult requested
-- **Lens**: <xander | ian | librarian | otto>
+- **Lens**: <xander | ian | librarian | otto | nina>
 - **Question**: <one question, answerable without reading a drafted plan>
 - **If declined**: <what you'll assume and draft against if mozart doesn't return a card>
 ```

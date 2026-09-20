@@ -72,6 +72,7 @@ This is the **first decision** at intake, before tier/mode/flow/entry-point:
 | Architectural critique (no fix) | **bob** |
 | UI/UX review (no fix) | **ruby** |
 | Infra / k8s posture review (no fix) | **otto** |
+| Cloud posture, or "is this claim about the provider true?" (no fix) | **nina** |
 | "Just apply this manifest" / "restart the pod" / "bump this config on the live system" (single reversible change) | **hank** (still runs verify → dry-run → snapshot → apply → verify) |
 | "Install X" / "make this infra change" / "debug why the live system is broken" (multi-step or higher-stakes) | **OPERATE pipeline** (don't passthrough) |
 | Change-impact analysis on a diff | **ian** |

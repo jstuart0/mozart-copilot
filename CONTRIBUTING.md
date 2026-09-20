@@ -92,6 +92,28 @@ emojis. No jokey lines.
   Code counterpart) — record its upstream model tier so
   `apply_models.py --check-tiers` can verify the port didn't silently retier
   it
+- `.github/workflows/check.yml` — the roster floor is pinned in **nine**
+  `--min-agents N` invocations, the step name that announces it, and an
+  **asserted failure-message substring** (`--min-agents requires >= N`).
+  Raise the floor and leave the substring and the step fails with a message
+  that says nothing about the agent you added. After the bump,
+  `grep -c -- '--min-agents <old N>' .github/workflows/check.yml` must be `0`
+- The **other eight** full-roster map documents besides
+  `.github/mozart/config/model-map.jsonc` — `config/model-maps/*.jsonc` and
+  the `tests/fixtures/map-*.jsonc` / `same-family.jsonc` corpus. Each
+  enumerates the whole roster, and the fixture steps assert *exactly one*
+  FAIL, so an agent file with no entry in a fixture map adds a second one and
+  breaks a step that has nothing to do with your change. Deliberately
+  excluded: `tests/fixtures/roster-floor-agents/` and
+  `tests/fixtures/map-roster-floor.jsonc`, which exist to violate the floor,
+  and the one agent `map-uncovered-agent.jsonc` omits on purpose
+- `docs/COPILOT_PORT.md` — the `N of M agents are specialists` cardinality
+- `.github/agents/mozart.agent.md` — the prose sentence counting specialists,
+  which is a separate site from the `agents:` allowlist above
+
+The last four are **cardinality-only**: they carry a number and never the new
+agent's name, so a sweep that greps for the name finds none of them. Grep for
+the outgoing count as well as the incoming name.
 
 ## Decision IDs
 

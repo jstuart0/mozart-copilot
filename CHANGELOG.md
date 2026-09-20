@@ -8,6 +8,82 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Added — nina, a read-only cloud specialist
+
+Ported from mozart-orchestration campaign
+`2026-09-19-deliver-nina-cloud-persona`. Roster goes 22 → 23.
+
+- **`.github/agents/nina.agent.md`** — reviews *assertions about how a cloud
+  provider behaves* (support/deprecation status, a quota, a blocked or
+  permitted action, "cannot be moved", a permission conclusion) by resolving
+  each against a current provider source instead of recalling it. Also
+  reviews cloud control-plane surfaces and cloud IaC. Reviews only: never
+  mutates, never authors an OPERATE change plan, never issues a security
+  severity. `tools: [read, search, execute, web]`, `model: claude-sonnet-5`,
+  model-map role `reviewers` — the same role as every other conditional
+  reviewer.
+- **`.github/mozart/agents/nina/CLOUD-READS.md`** — her read rules, carved
+  out under this edition's 30,000-character body cap. Upstream's body was
+  29,969 characters when this port was cut, 31 under the cap, so she could not
+  ship inline here with even the mandatory `## Model attestation` section added.
+  (Upstream's later re-freeze moved that body to 32,170 characters, which widens
+  the margin without changing the conclusion.) The carve uses the
+  persona-private overflow convention (`.github/mozart/agents/<name>/`, as
+  `scott/PR-AUTHORING.md` does), not `manual/`, which is the conductor's.
+  Ported body: 12,883 characters.
+- **`.github/mozart/agents/nina/review-role.json`** — the deny-by-default AWS
+  IAM skeleton that is the enforcement half of the read rules. Lives in the
+  bundle rather than under `tests/`, because `tests/` is never installed and
+  a policy an installed bundle can't read is an inert control in the
+  control's own home. The read rules state the path and the reason, and tell
+  her to treat live-read mode as ungranted if the bundle resolves and the
+  file doesn't.
+- **Frozen-text handling.** The read rules' two `### Hard rules` sections are
+  frozen byte-exact across all four editions and must not be reworded here.
+  Getting there took two rulings, because the frozen text named Claude-only
+  tools that byte-exactness would have shipped verbatim into an edition where
+  they don't exist. Both were settled on one test — *is the rule itself
+  harness-specific?* The resolution-order paragraph names a fetch channel, so
+  it **diverges**: it left the frozen span and each edition writes its own
+  (here, the `web` tool). Bucket 5's host-side bar does not — a surface
+  reachable without a provider grant is a fact about the account, not about
+  the harness — so it **converges**, rephrased to name the capability
+  (*"reachable with file-read capability alone, no shell required"*). Each
+  edition's tool name moved to a one-line adjunct between the two spans, which
+  is now the only place in the file a tool may be named.
+- **Allowlist, not denylist.** A call is admissible only on a conjunction: an
+  allowed verb, *and* a non-denied bucket, *and* a grammar-conforming leaf-path
+  projection with a declared value kind from exactly seven (generic `string`
+  is deliberately not one), *and* a pinned target whose principal matches the
+  operator-declared review role by exact ARN. `value(<path>)` is the only
+  admissible `gcloud --format` wrapper. Live reads are **AWS-only**, and
+  live-read mode is granted by the conductor at dispatch, never
+  self-evaluated.
+- **Wiring** — stage-4 and stage-8 trigger rows, the fifth pre-plan consult
+  lens, the AUDIT lead row and its capability gate, an INCIDENT
+  `cloud control-plane` hypothesis lane, OPERATE recon input and HEAVY
+  pre-flight review, the single-agent routing rows, and xander's
+  disambiguating clause (cloud IAM stays his when the finding is
+  *exploitable*; nina owns whether the control binds at all).
+- **`CONTRIBUTING.md`** — the add-an-agent checklist gains the four
+  **cardinality-only** sites a name-based sweep cannot see: the nine
+  `--min-agents` pins plus the asserted failure-message substring in
+  `check.yml`, the eight non-canonical map documents, the
+  `N of M agents are specialists` line in `docs/COPILOT_PORT.md`, and
+  mozart's prose specialist count.
+
+### Fixed — HEAVY classifies access control at any layer
+
+`manual/OPERATE.md`'s HEAVY tier read "RBAC", which in a Kubernetes-flavoured
+manual reads as *Kubernetes* RBAC — so a cloud identity-plane change (a
+permission set, a trust-policy edit, an org-unit move) classified STANDARD and
+skipped the pre-flight gate entirely. Widened to "access control at any layer"
+across all four restatements plus a disambiguating paragraph. Landed as its
+own commit, before the nina wiring; it is a live defect here independent of
+the persona. **This reclassifies real campaigns into HEAVY. That is the
+intent.**
+
+
 ### Added — conductor self-verification: mozart's own claims become checkable
 
 Ported from mozart-orchestration campaign

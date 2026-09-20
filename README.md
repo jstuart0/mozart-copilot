@@ -8,7 +8,7 @@ as Copilot subagents and drives the work end-to-end. This repo is the GitHub
 Copilot port of the mozart orchestration system (originally built as a Claude
 Code plugin; also ported to OpenAI Codex CLI as `mozart-codex`).
 
-> **Status: port complete, runtime validated only mechanically.** The 22
+> **Status: port complete, runtime validated only mechanically.** The 23
 > personas, the six-shape pipeline, the model map, the installer, and the
 > validator tooling are all in place and pass their own gates — `check_agents.py`,
 > `apply_models.py`, and `install-bundle.sh`'s bite tests all run green. What
@@ -51,6 +51,7 @@ job — routing it directly instead of imposing the full pipeline.
 | dexter | Code-health reviewer — duplication, complexity, naming, test seams | `reviewers` |
 | xander | Security reviewer — threat model, injection, auth, secrets | `reviewers` |
 | otto | Infrastructure-ops reviewer — infra, config, deployment, ops | `reviewers` |
+| nina | Cloud specialist — resolves provider-behaviour assertions against a current source | `reviewers` |
 | tessa | Test-strategy and test-quality reviewer | `reviewers` |
 | percy | Performance engineer — measurement-first | `reviewers` |
 | librarian | Code archaeologist — does this already exist? (BROWNFIELD only) | `reviewers` |
@@ -543,7 +544,7 @@ bundle location makes this file less discoverable than a repo-root
 
 Every agent's `model:` is stamped from `.github/mozart/config/model-map.jsonc`
 — seven roles (`conductor`, `deep-reviewers`, `builders`, `reviewers`,
-`support`, `fast-scan`, `validation`), 22 assignments. The headline
+`support`, `fast-scan`, `validation`), 23 assignments. The headline
 invariant: **`validation` always runs a different model family than
 `builders`** (D8) — sebastian's counterpoint review is only worth running if
 it's a genuinely different model auditing the work, not a same-family echo.

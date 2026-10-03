@@ -131,7 +131,7 @@ reading your diff carefully:
 
 ```bash
 python3 -m py_compile scripts/check_agents.py
-bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
+bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh scripts/lib-campaign.sh
 python3 scripts/check_agents.py --self-test
 python3 scripts/check_agents.py --min-agents <current roster size>
 ```
@@ -144,7 +144,7 @@ the actions that consume them — `--min-agents` with `--map`/`--check-install`,
 and `apply_models.py`'s `--upstream-readme` with `--check-tiers` — otherwise the
 run exits `2` naming both flags.
 
-If you changed `scripts/mozart-lint.sh` or `scripts/mozart-metrics.sh`, also run
+If you changed `scripts/mozart-lint.sh`, `scripts/mozart-metrics.sh` or `scripts/lib-campaign.sh`, also run
 the cross-repo parity check against a mozart-orchestration checkout:
 
 ```bash
@@ -152,8 +152,9 @@ bash scripts/check-lint-parity.sh /path/to/mozart-orchestration
 ```
 
 `mozart-lint.sh` must equal orchestration's modulo the allowlisted reviewer-label
-diff committed at `tests/lint-upstream.diff`; `mozart-metrics.sh` must be
-byte-identical. It is deliberately **not** a CI step — CI has no second checkout,
+diff committed at `tests/lint-upstream.diff`; `mozart-metrics.sh` and
+`lib-campaign.sh` (which both scripts source from beside themselves, and without
+which they exit 3) must be byte-identical. It is deliberately **not** a CI step — CI has no second checkout,
 so it would be permanently red or vacuously green. It narrows the manual review of
 that diff; it does not replace it. `AGENTS.md` has the full rationale.
 

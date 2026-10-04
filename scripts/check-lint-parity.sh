@@ -42,7 +42,7 @@ fi
 # than matching case-insensitively: -i would also admit any casing of
 # "claude"/"counterpoint" anywhere on a line, widening the allowlist past the
 # specific strings this rename actually produces.
-ALLOW_RE='REVIEW_LABEL_RE|review-drift|external-review|Counterpoint|Codex|Claude|codex-drift|codex r[12]|round [12]|PIPELINE\.md|^[<>] *#( |$)|^[<>] *$'
+ALLOW_RE='REVIEW_LABEL_RE|review-drift|external-review|Counterpoint|Codex|Claude|codex-drift|codex r[12]|round [12]|LENS_SINCE=.*:-(2026-10-04|9999-12-31)|PIPELINE\.md|^[<>] *#( |$)|^[<>] *$'
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -65,6 +65,10 @@ changed=$(grep -cE '^[<>]' tests/lint-upstream.diff || true)
 if [ "$changed" -lt 8 ]; then
   echo "FAIL: allowlist changed-line population $changed < 8 — the file is" >&2
   echo "      empty or truncated; step 3 below would pass vacuously" >&2
+  rc=1
+fi
+if ! grep -qF 'MOZART_LINT_LENS_SINCE:-9999-12-31' tests/lint-upstream.diff; then
+  echo "FAIL: named member absent from the allowlist: the D13 lens-date default" >&2
   rc=1
 fi
 if ! grep -qF 'REVIEW_LABEL_RE=' tests/lint-upstream.diff; then

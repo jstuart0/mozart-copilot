@@ -34,6 +34,7 @@ ported here yet.
   first-dot slug rule, the lens-record pin, the lint triples again under
   `LC_ALL=C`, and `metrics-split` and `metrics-light` in its metrics loop, with
   floors for the ledger and conductor siblings.
+- **Deliberate deviation (D13):** the default of `MOZART_LINT_LENS_SINCE` in this port's `mozart-lint.sh` is `9999-12-31`, so the dated HEAVY surface-record rules are dormant until set, because this port's manual does not yet tell its conductor to write one; revisit when the ports plan lands that prose.
 - **`.github/mozart/manual/STATE.md`**: the conductor-record snippet carries the
   `P<N>:heavy` row-required key and the Tier-line rule; the linter paragraph
   names the seventeen categories and the library.

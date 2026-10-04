@@ -109,7 +109,15 @@ CONDUCTOR_SINCE="${MOZART_LINT_CONDUCTOR_SINCE:-2026-09-19}"
 # ticked phase row) apply to campaigns whose slug date is on or after this date. 2026-10-04 is the day
 # after the change landed (2026-10-03), so this campaign and everything earlier gains no finding. The
 # override is a fixture hook, announced like the adoption-date one.
-LENS_SINCE="${MOZART_LINT_LENS_SINCE:-2026-10-04}"
+# PORT DEVIATION (D13, deliberate): in this port the default is a far-future date, so the
+# lens-record rules are dormant unless MOZART_LINT_LENS_SINCE is set. Upstream defaults to
+# 2026-10-04. Why: this port's manual does not yet tell its conductor to write a surface record
+# on a HEAVY tier line (that prose is in the follow-up ports plan), so enforcing the rule here
+# would fail a user for following their own manual. The rule's code is unchanged and the fixture
+# corpus pins the date to exercise it. Revisit when this port's manual gains the surface-record
+# rule: set the default to the date that prose ships. The string comparison in the awk
+# (slug_date >= lens_since) takes any YYYY-MM-DD, so 9999-12-31 never matches a real slug.
+LENS_SINCE="${MOZART_LINT_LENS_SINCE:-9999-12-31}"
 CONDUCTOR_GATES_DELIVER="5 9 10 13 P:heavy"
 CONDUCTOR_GATES_OPERATE="1:fact 4 6"
 CONDUCTOR_GATES_INCIDENT="1 5"

@@ -8,6 +8,43 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Changed — campaign scripts and the conductor-record snippet, from mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`
+
+Only the parts the other editions cannot run without; the persona and manual
+prose changes of that campaign (the no-progress stop, the LIGHT tier, the
+split-layout instructions, the state templates, the escapes grammar) are not
+ported here yet.
+
+- **`scripts/lib-campaign.sh`** (new, byte copy) holds the sibling-file rule
+  and the awk helpers lint and metrics share. `mozart-lint.sh` and
+  `mozart-metrics.sh` source it from beside themselves and exit 3 when it is
+  missing or empty, so the three files travel together.
+- **`scripts/mozart-metrics.sh`** (byte copy) reads a campaign's ledger and
+  conductor record from files beside the state file as well as from inside it,
+  and reads CRLF state files it used to skip.
+- **`scripts/mozart-lint.sh`** gains `split-layout` and `escape-unrecorded`
+  (seventeen finding categories), and a dated rule that a HEAVY tier line needs
+  a usable surface record and records both lenses
+  (`MOZART_LINT_LENS_SINCE`, default 2026-10-04). `tests/lint-upstream.diff` is
+  regenerated; `scripts/check-lint-parity.sh` also checks the library byte for
+  byte.
+- **Conductor corpus** mirrored whole (342 files, `diff -r` identical):
+  the split pairs, the investigation and post-mortem fixtures, `metrics-split`,
+  `metrics-light` and `escapes-agree`. `check.yml` runs the new categories, the
+  first-dot slug rule, the lens-record pin, the lint triples again under
+  `LC_ALL=C`, and `metrics-split` and `metrics-light` in its metrics loop, with
+  floors for the ledger and conductor siblings.
+- **Deliberate deviation (D13):** the default of `MOZART_LINT_LENS_SINCE` in this port's `mozart-lint.sh` is `9999-12-31`, so the dated HEAVY surface-record rules are dormant until set, because this port's manual does not yet tell its conductor to write one; revisit when the ports plan lands that prose.
+- **`.github/mozart/manual/STATE.md`**: the conductor-record snippet carries the
+  `P<N>:heavy` row-required key and the Tier-line rule; the linter paragraph
+  names the seventeen categories and the library.
+- **`state_md5`** now covers the state file plus its sibling ledger and
+  conductor files (`.github/mozart/EVAL.md`, `.github/mozart/manual/EVAL.md`);
+  the lint column list in the eval report template gains `split-layout` and
+  `escape-unrecorded`. A reader that predates the siblings misses a change made
+  only to one, so the first eval after this re-examines every split campaign
+  once.
+
 ### Added — nina, a read-only cloud specialist
 
 Ported from mozart-orchestration campaign

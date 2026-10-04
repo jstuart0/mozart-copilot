@@ -49,7 +49,7 @@ jobs:
         run: python3 -m py_compile scripts/check_agents.py scripts/apply_models.py
 
       - name: Parse — shell scripts have valid syntax
-        run: bash -n scripts/install-bundle.sh scripts/uninstall.sh scripts/mozart scripts/mozart-lint.sh scripts/mozart-metrics.sh scripts/check-fingerprints.sh
+        run: bash -n scripts/install-bundle.sh scripts/uninstall.sh scripts/mozart scripts/mozart-lint.sh scripts/mozart-metrics.sh scripts/lib-campaign.sh scripts/check-fingerprints.sh
 
       - name: No personal-infrastructure fingerprints (Phase P3 — C1 drift-guard)
         run: bash scripts/check-fingerprints.sh
@@ -902,15 +902,27 @@ jobs:
           test -d tests/fixtures/campaign/conductor/metrics-conductor
           test -d tests/fixtures/campaign/conductor/metrics-vacuity
           n=$(find tests/fixtures/campaign/conductor/lint -name '*.state.md' | wc -l | tr -d ' ')
-          if [ "$n" -lt 48 ]; then echo "expected >=48 lint fixture state files, found $n" >&2; exit 1; fi
+          if [ "$n" -lt 173 ]; then echo "expected >=173 lint fixture state files, found $n" >&2; exit 1; fi
+          # The split fixtures keep a ledger or a conductor record beside the
+          # state file; a state-file floor cannot see one losing a half.
+          nl=$(find tests/fixtures/campaign/conductor/lint -name '*.ledger.md' | wc -l | tr -d ' ')
+          nc=$(find tests/fixtures/campaign/conductor/lint -name '*.conductor.md' | wc -l | tr -d ' ')
+          if [ "$nl" -lt 16 ] || [ "$nc" -lt 25 ]; then echo "expected >=16 ledger and >=25 conductor siblings, found $nl and $nc" >&2; exit 1; fi
+          test -d tests/fixtures/campaign/conductor/metrics-split
           # Checks K/L must reach six layouts, and a total floor cannot tell
-          # "48 files, all in active/" from "48 across six layouts". Probe each
-          # one. The last two are the legacy prefixless flat file and the
-          # legacy thoughts/shared/ root, both of which K/L used to skip.
+          # "173 files, all in active/" from "173 across six layouts". Probe
+          # each one. The 5th and 6th are the legacy prefixless flat file and
+          # the legacy thoughts/shared/ root, both of which K/L used to skip;
+          # the rest are the split pair (state + ledger + conductor) in each
+          # layout it can sit in.
           root=tests/fixtures/campaign/conductor/lint
           for layout in ".mozart/plans/active/*.state.md" ".mozart/plans/finished/*.state.md" \
                         ".mozart/plans/active-*.state.md" ".mozart/plans/finished-*.state.md" \
-                        ".mozart/plans/[0-9]*.state.md" "thoughts/shared/plans/[0-9]*.state.md"; do
+                        ".mozart/plans/[0-9]*.state.md" "thoughts/shared/plans/[0-9]*.state.md" \
+                        ".mozart/plans/active/*.ledger.md" ".mozart/plans/active/*.conductor.md" \
+                        ".mozart/plans/finished/*.ledger.md" ".mozart/plans/finished/*.conductor.md" \
+                        ".mozart/plans/active-*.conductor.md" ".mozart/plans/finished-*.conductor.md" \
+                        ".mozart/plans/[0-9]*.conductor.md" "thoughts/shared/plans/[0-9]*.ledger.md"; do
             # shellcheck disable=SC2086
             set -- $(eval echo "$root/$layout")
             [ -f "$1" ] || { echo "unpopulated corpus layout: $layout" >&2; exit 1; }
@@ -921,28 +933,56 @@ jobs:
           root=tests/fixtures/campaign/conductor/lint
           tmp=$(mktemp -d)   # scratch outside the tree — never dirty the checkout
           trap 'rm -rf "$tmp"' EXIT
-          out=$(MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 bash scripts/mozart-lint.sh "$root" 2>&1) && rc=0 || rc=$?
+          # The corpus predates the lens-record date (MOZART_LINT_LENS_SINCE,
+          # default 2026-10-04), so the run pins it after the last 2099-11
+          # fixture and before the 2099-12 ones that exercise the rule.
+          lens=2099-12-01
+          out=$(MOZART_LINT_LENS_SINCE=$lens MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 bash scripts/mozart-lint.sh "$root" 2>&1) && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then echo "expected exit 1, got $rc" >&2; echo "$out" >&2; exit 1; fi
-          printf '%s\n' "$out" | grep -qF 'conductor adoption date overridden: 2099-06-01' || {
+          grep -qF 'conductor adoption date overridden: 2099-06-01' <<<"$out" || {
             echo "missing override-visibility line" >&2; echo "$out" >&2; exit 1; }
+          grep -qF "lens-record date overridden: $lens" <<<"$out" || {
+            echo "missing lens-record override-visibility line" >&2; echo "$out" >&2; exit 1; }
 
-          # Derive actual triples: (category, basename minus .state.md, key
-          # before the first ':' after ' — '), keeping only the K/L/J
-          # categories PD24 names — Check I's missing-12b is deliberately
-          # excluded here, same as the plan's own runner loop.
-          printf '%s\n' "$out" \
-            | grep -E '\[(conductor-|decision-trigger|mutation-manifest|missing-2b)' \
-            | sed -E 's/^LINT +\[([a-z0-9-]+)\] +([^ ]+) — ([^:]+):.*$/\1\t\2\t\3/' \
-            | sed -E 's#\t.*/([^/]+)\.state\.md\t#\t\1\t#' \
-            | sort -u > "$tmp/actual.tsv"
+          # Derive actual triples: (category, file name up to its FIRST dot,
+          # key before the first ': '), keeping the categories expected.tsv
+          # accounts for. The first-dot rule cuts a state file, a sibling, a
+          # post-mortem (<slug>.postmortem.md) and an investigation to the slug
+          # it was written under; the key runs to the end of the line for a
+          # message that has no colon (stale-paths).
+          cats='conductor-missing|conductor-unlinked|conductor-row|conductor-reference|decision-trigger|mutation-manifest|missing-2b|split-layout|stranded-artifacts|stale-paths|escape-unrecorded'
+          triples() {
+            awk -v cats="$cats" '
+              BEGIN { n = split(cats, a, "|"); for (i = 1; i <= n; i++) catset[a[i]] = 1 }
+              /^LINT \[/ {
+                rest = $0
+                sub(/^LINT \[/, "", rest)
+                split(rest, p, "]")
+                cat = p[1]
+                if (!(cat in catset)) next
+                body = rest
+                sub(/^[^]]*\][ ]*/, "", body)
+                nsep = split(body, q, " — ")
+                keymsg = q[2]
+                for (i = 3; i <= nsep; i++) keymsg = keymsg " — " q[i]
+                split(keymsg, r, ": ")
+                slug = q[1]
+                sub(/^.*\//, "", slug)
+                sub(/\..*$/, "", slug)
+                printf "%s\t%s\t%s\n", cat, slug, r[1]
+              }' | sort -u
+          }
+          printf '%s\n' "$out" | triples > "$tmp/actual.tsv"
 
-          awk -F'\t' '$1=="lint"{print $2"\t"$3"\t"$4}' "$root/expected.tsv" | sort -u > "$tmp/expected.tsv"
+          awk -F'\t' -v cats="$cats" '
+            BEGIN { n = split(cats, a, "|"); for (i = 1; i <= n; i++) catset[a[i]] = 1 }
+            $1=="lint" && ($2 in catset) {print $2"\t"$3"\t"$4}' "$root/expected.tsv" | sort -u > "$tmp/expected.tsv"
 
           # Every LINT line the corpus emits must be accounted for in
           # expected.tsv. Set-equality over a FILTERED category list cannot see
           # a fixture that ALSO fires an unfiltered category — noflow-j fired
           # missing-12b alongside its intended missing-2b and nothing said so.
-          emitted=$(printf '%s\n' "$out" | grep -c '^LINT \[' || true)
+          emitted=$(grep -c '^LINT \[' <<<"$out" || true)
           want=$(wc -l < "$tmp/expected.tsv" | tr -d ' ')
           if [ "$emitted" -ne "$want" ]; then
             echo "corpus emitted $emitted LINT line(s), expected.tsv records $want — a fixture is firing a category nothing accounts for" >&2
@@ -950,19 +990,30 @@ jobs:
           fi
 
           floor=$(wc -l < "$tmp/expected.tsv" | tr -d ' ')
-          if [ "$floor" -lt 47 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
+          if [ "$floor" -lt 155 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
           grep -qF "$(printf 'conductor-row\t2099-07-03-deliver-ctl\tCR1')" "$tmp/expected.tsv" || {
             echo "named member CR1 not in expected.tsv — expected.tsv itself drifted" >&2; exit 1; }
+          grep -qF "$(printf 'split-layout\t2099-09-05-deliver-split-dupledger\tfindings-ledger-duplicate')" "$tmp/expected.tsv" || {
+            echo "named member split-layout dupledger not in expected.tsv — expected.tsv itself drifted" >&2; exit 1; }
+          grep -qF "$(printf 'escape-unrecorded\t2099-05-02-deliver-esc-noneyet\t2099-09-02-diagnose-noneyet')" "$tmp/expected.tsv" || {
+            echo "named member escape-unrecorded noneyet not in expected.tsv — expected.tsv itself drifted" >&2; exit 1; }
 
           if ! diff -u "$tmp/expected.tsv" "$tmp/actual.tsv"; then
             echo "lint triples don't match expected.tsv" >&2; exit 1
+          fi
+
+          # The same triples under the C locale: a lint that reads a multibyte
+          # fixture by byte must not change its findings with the caller's locale.
+          LC_ALL=C MOZART_LINT_LENS_SINCE=$lens MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 bash scripts/mozart-lint.sh "$root" 2>&1 | triples > "$tmp/actual-c.tsv" || true
+          if ! diff -u "$tmp/actual.tsv" "$tmp/actual-c.tsv"; then
+            echo "lint triples differ under LC_ALL=C" >&2; exit 1
           fi
 
       - name: Conductor corpus — override control (no override yields no line, prebound campaign untouched) (PD24)
         run: |
           root=tests/fixtures/campaign/conductor/lint
           out=$(bash scripts/mozart-lint.sh "$root" 2>&1) && rc=0 || rc=$?
-          if printf '%s\n' "$out" | grep -q '^conductor adoption date overridden:'; then
+          if grep -q -e '^conductor adoption date overridden:' -e '^lens-record date overridden:' <<<"$out"; then
             echo "override-visibility line printed with no override set" >&2; echo "$out" >&2; exit 1
           fi
           printf '%s\n' "$out" | grep -qF '2099-05-31-deliver-prebound' || {
@@ -971,7 +1022,7 @@ jobs:
 
       - name: Conductor corpus — metrics cases match expected lines (PD24)
         run: |
-          for case in metrics-placeholder metrics-conductor metrics-vacuity; do
+          for case in metrics-placeholder metrics-conductor metrics-vacuity metrics-split metrics-light; do
             root="tests/fixtures/campaign/conductor/$case"
             out=$(bash scripts/mozart-metrics.sh "$root" 2>&1) && rc=0 || rc=$?
             if [ "$rc" -ne 0 ]; then echo "$case: expected exit 0, got $rc" >&2; echo "$out" >&2; exit 1; fi

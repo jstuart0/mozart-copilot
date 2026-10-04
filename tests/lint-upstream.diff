@@ -1,9 +1,10 @@
-26c26,27
-< # re-check) — that stays a manual sweep at intake. See agents/mozart.md.
+48,49c48,49
+< # re-check) — that stays a manual sweep at intake. See agents/STATE.md
+< # (*State persistence (crash-resume)*), where probe 5 is defined.
 ---
 > # re-check) — that stays a manual sweep at intake. See
 > # .github/mozart/PIPELINE.md.
-46a48,56
+69a70,78
 > #
 > # The Codex-drift check (below) matches any of the three external-review
 > # labels this port's history carries: "Counterpoint" (this port's cross-model
@@ -13,24 +14,36 @@
 > # same way — a verbatim port of this script would key on "Codex" alone and
 > # silently stop catching drift the moment a campaign's Paths block says
 > # "Counterpoint r1" instead (D6).
-52a63,65
-> 
+92a102,104
 > # External-review label set this port's state files may carry (D6).
 > REVIEW_LABEL_RE='(Counterpoint|Codex|Claude)'
-657c670,673
+> 
+100c112,120
+< LENS_SINCE="${MOZART_LINT_LENS_SINCE:-2026-10-04}"
+---
+> # PORT DEVIATION (D13, deliberate): in this port the default is a far-future date, so the
+> # lens-record rules are dormant unless MOZART_LINT_LENS_SINCE is set. Upstream defaults to
+> # 2026-10-04. Why: this port's manual does not yet tell its conductor to write a surface record
+> # on a HEAVY tier line (that prose is in the follow-up ports plan), so enforcing the rule here
+> # would fail a user for following their own manual. The rule's code is unchanged and the fixture
+> # corpus pins the date to exercise it. Revisit when this port's manual gains the surface-record
+> # rule: set the default to the date that prose ships. The string comparison in the awk
+> # (slug_date >= lens_since) takes any YYYY-MM-DD, so 9999-12-31 never matches a real slug.
+> LENS_SINCE="${MOZART_LINT_LENS_SINCE:-9999-12-31}"
+935c955,958
 <   # --- Check C: paths-vs-checkbox codex drift --------------------------------
 ---
 >   # --- Check C: paths-vs-checkbox external-review drift ----------------------
 >   # Generalized label set (D6) — matches Counterpoint, Codex, or Claude, so a
 >   # state file written under any of the three forms this port's history
 >   # carries is checked identically.
-660,661c676,677
+938,939c961,962
 <     if grep -qE '^\- \[x\] 5\. Codex' "$f" && grep -E '^\- Codex r1' "$f" | grep -q 'not yet run'; then
 <       finding "codex-drift" "$f — stage 5 checkbox ticked but Paths says codex r1 'not yet run'"
 ---
 >     if grep -qE "^\- \[x\] 5\. ${REVIEW_LABEL_RE}" "$f" && grep -E "^\- ${REVIEW_LABEL_RE} r1" "$f" | grep -q 'not yet run'; then
 >       finding "review-drift" "$f — stage 5 checkbox ticked but Paths says round 1 'not yet run'"
-663,664c679,680
+941,942c964,965
 <     if grep -qE '^\- \[x\] 9\. Codex' "$f" && grep -E '^\- Codex r2' "$f" | grep -q 'not yet run'; then
 <       finding "codex-drift" "$f — stage 9 checkbox ticked but Paths says codex r2 'not yet run'"
 ---

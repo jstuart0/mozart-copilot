@@ -5,6 +5,8 @@
 #                             reviewer-label diff committed at
 #                             tests/lint-upstream.diff (PD22)
 #   scripts/mozart-metrics.sh is byte-identical to the source's
+#   scripts/lib-campaign.sh   is byte-identical to the source's (lint and
+#                             metrics exit 3 without it, so it ships with them)
 #
 # Not a check.yml step: it needs a mozart-orchestration checkout, which CI
 # cannot see. Same reason the fixture-corpus byte-diff runs at campaign-
@@ -25,7 +27,7 @@ set -uo pipefail
 SRC=${1:-}
 if [ -z "$SRC" ] || [ ! -f "$SRC/scripts/mozart-lint.sh" ]; then
   echo "usage: $0 <mozart-orchestration-root>" >&2
-  echo "  (needs <root>/scripts/mozart-lint.sh and mozart-metrics.sh)" >&2
+  echo "  (needs <root>/scripts/mozart-lint.sh, mozart-metrics.sh and lib-campaign.sh)" >&2
   exit 2
 fi
 
@@ -40,7 +42,7 @@ fi
 # than matching case-insensitively: -i would also admit any casing of
 # "claude"/"counterpoint" anywhere on a line, widening the allowlist past the
 # specific strings this rename actually produces.
-ALLOW_RE='REVIEW_LABEL_RE|review-drift|external-review|Counterpoint|Codex|Claude|codex-drift|codex r[12]|round [12]|PIPELINE\.md|^[<>] *#( |$)|^[<>] *$'
+ALLOW_RE='REVIEW_LABEL_RE|review-drift|external-review|Counterpoint|Codex|Claude|codex-drift|codex r[12]|round [12]|LENS_SINCE=.*:-(2026-10-04|9999-12-31)|PIPELINE\.md|^[<>] *#( |$)|^[<>] *$'
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -65,6 +67,10 @@ if [ "$changed" -lt 8 ]; then
   echo "      empty or truncated; step 3 below would pass vacuously" >&2
   rc=1
 fi
+if ! grep -qF 'MOZART_LINT_LENS_SINCE:-9999-12-31' tests/lint-upstream.diff; then
+  echo "FAIL: named member absent from the allowlist: the D13 lens-date default" >&2
+  rc=1
+fi
 if ! grep -qF 'REVIEW_LABEL_RE=' tests/lint-upstream.diff; then
   echo "FAIL: named member absent from the allowlist: REVIEW_LABEL_RE=" >&2
   rc=1
@@ -86,6 +92,19 @@ if cmp "$SRC/scripts/mozart-metrics.sh" scripts/mozart-metrics.sh; then
   echo "ok: scripts/mozart-metrics.sh byte-identical to the source"
 else
   echo "FAIL: scripts/mozart-metrics.sh is not byte-identical to the source" >&2
+  rc=1
+fi
+
+# 5. The shared library is a straight copy too. Population floor + named
+#    member (M7): an empty source library would make cmp pass on two empty
+#    files, so the source copy must be non-empty and define the sibling rule.
+if [ ! -s "$SRC/scripts/lib-campaign.sh" ] || ! grep -qF 'campaign_sibling' "$SRC/scripts/lib-campaign.sh"; then
+  echo "FAIL: the source's scripts/lib-campaign.sh is absent, empty, or lacks campaign_sibling" >&2
+  rc=1
+elif cmp "$SRC/scripts/lib-campaign.sh" scripts/lib-campaign.sh; then
+  echo "ok: scripts/lib-campaign.sh byte-identical to the source"
+else
+  echo "FAIL: scripts/lib-campaign.sh is absent or not byte-identical to the source's" >&2
   rc=1
 fi
 

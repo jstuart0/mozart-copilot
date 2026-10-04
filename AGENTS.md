@@ -43,7 +43,7 @@ rationale.
 
 ```bash
 python3 -m py_compile scripts/check_agents.py
-bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh
+bash -n scripts/mozart-lint.sh scripts/mozart-metrics.sh scripts/lib-campaign.sh
 
 # Validator self-test against the fixture corpus
 python3 scripts/check_agents.py --self-test --forms
@@ -60,12 +60,13 @@ python3 scripts/check_agents.py --file .github/agents/<name>.agent.md
 
 # Conductor-corpus behaviour loop (the local equivalent of check.yml's
 # "Conductor corpus" steps). Lint runs under the fixture-date override, so
-# the corpus's 2099-dated campaigns land post-adoption; the control run
-# below must NOT print the override-visibility line.
-MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 \
+# the corpus's 2099-dated campaigns land post-adoption, and the lens-record
+# date is pinned after the last 2099-11 fixture; the control run below must
+# NOT print either override-visibility line.
+MOZART_LINT_LENS_SINCE=2099-12-01 MOZART_LINT_CONDUCTOR_SINCE=2099-06-01 \
   bash scripts/mozart-lint.sh tests/fixtures/campaign/conductor/lint   # expect exit 1
 bash scripts/mozart-lint.sh tests/fixtures/campaign/conductor/lint     # control
-for c in metrics-placeholder metrics-conductor metrics-vacuity; do
+for c in metrics-placeholder metrics-conductor metrics-vacuity metrics-split metrics-light; do
   bash scripts/mozart-metrics.sh "tests/fixtures/campaign/conductor/$c"  # expect exit 0
 done
 ```
@@ -86,7 +87,12 @@ bash scripts/check-lint-parity.sh /path/to/mozart-orchestration
 
 `scripts/mozart-lint.sh` must equal the source's modulo the allowlisted
 reviewer-label diff committed at `tests/lint-upstream.diff`, and
-`scripts/mozart-metrics.sh` must be byte-identical to it. The script also
+`scripts/mozart-metrics.sh` and `scripts/lib-campaign.sh` must be byte-identical to
+it. The lint diff also carries one deliberate, non-label deviation (D13): the
+default of `MOZART_LINT_LENS_SINCE` is `9999-12-31` here, so the dated
+lens-record rules stay dormant until this port's manual tells its conductor to
+write a HEAVY surface record (the ports plan); the corpus pins the date to
+exercise the rule, and the allowlist admits exactly that line. The script also
 guards against a vacuous pass (an empty or truncated allowlist file) with a
 changed-line floor and a named member. It narrows the manual review of that
 diff; it does not replace it.

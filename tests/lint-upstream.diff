@@ -18,20 +18,20 @@
 > # External-review label set this port's state files may carry (D6).
 > REVIEW_LABEL_RE='(Counterpoint|Codex|Claude)'
 > 
-933c945,948
+935c947,950
 <   # --- Check C: paths-vs-checkbox codex drift --------------------------------
 ---
 >   # --- Check C: paths-vs-checkbox external-review drift ----------------------
 >   # Generalized label set (D6) — matches Counterpoint, Codex, or Claude, so a
 >   # state file written under any of the three forms this port's history
 >   # carries is checked identically.
-936,937c951,952
+938,939c953,954
 <     if grep -qE '^\- \[x\] 5\. Codex' "$f" && grep -E '^\- Codex r1' "$f" | grep -q 'not yet run'; then
 <       finding "codex-drift" "$f — stage 5 checkbox ticked but Paths says codex r1 'not yet run'"
 ---
 >     if grep -qE "^\- \[x\] 5\. ${REVIEW_LABEL_RE}" "$f" && grep -E "^\- ${REVIEW_LABEL_RE} r1" "$f" | grep -q 'not yet run'; then
 >       finding "review-drift" "$f — stage 5 checkbox ticked but Paths says round 1 'not yet run'"
-939,940c954,955
+941,942c956,957
 <     if grep -qE '^\- \[x\] 9\. Codex' "$f" && grep -E '^\- Codex r2' "$f" | grep -q 'not yet run'; then
 <       finding "codex-drift" "$f — stage 9 checkbox ticked but Paths says codex r2 'not yet run'"
 ---

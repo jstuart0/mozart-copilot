@@ -902,7 +902,7 @@ jobs:
           test -d tests/fixtures/campaign/conductor/metrics-conductor
           test -d tests/fixtures/campaign/conductor/metrics-vacuity
           n=$(find tests/fixtures/campaign/conductor/lint -name '*.state.md' | wc -l | tr -d ' ')
-          if [ "$n" -lt 171 ]; then echo "expected >=171 lint fixture state files, found $n" >&2; exit 1; fi
+          if [ "$n" -lt 173 ]; then echo "expected >=173 lint fixture state files, found $n" >&2; exit 1; fi
           # The split fixtures keep a ledger or a conductor record beside the
           # state file; a state-file floor cannot see one losing a half.
           nl=$(find tests/fixtures/campaign/conductor/lint -name '*.ledger.md' | wc -l | tr -d ' ')
@@ -910,7 +910,7 @@ jobs:
           if [ "$nl" -lt 16 ] || [ "$nc" -lt 25 ]; then echo "expected >=16 ledger and >=25 conductor siblings, found $nl and $nc" >&2; exit 1; fi
           test -d tests/fixtures/campaign/conductor/metrics-split
           # Checks K/L must reach six layouts, and a total floor cannot tell
-          # "171 files, all in active/" from "171 across six layouts". Probe
+          # "173 files, all in active/" from "173 across six layouts". Probe
           # each one. The 5th and 6th are the legacy prefixless flat file and
           # the legacy thoughts/shared/ root, both of which K/L used to skip;
           # the rest are the split pair (state + ledger + conductor) in each
@@ -990,7 +990,7 @@ jobs:
           fi
 
           floor=$(wc -l < "$tmp/expected.tsv" | tr -d ' ')
-          if [ "$floor" -lt 150 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
+          if [ "$floor" -lt 155 ]; then echo "expected.tsv floor too small: $floor" >&2; exit 1; fi
           grep -qF "$(printf 'conductor-row\t2099-07-03-deliver-ctl\tCR1')" "$tmp/expected.tsv" || {
             echo "named member CR1 not in expected.tsv — expected.tsv itself drifted" >&2; exit 1; }
           grep -qF "$(printf 'split-layout\t2099-09-05-deliver-split-dupledger\tfindings-ledger-duplicate')" "$tmp/expected.tsv" || {

@@ -28,7 +28,7 @@ ported here yet.
   (`MOZART_LINT_LENS_SINCE`, default 2026-10-04). `tests/lint-upstream.diff` is
   regenerated; `scripts/check-lint-parity.sh` also checks the library byte for
   byte.
-- **Conductor corpus** mirrored whole (340 files, `diff -r` identical):
+- **Conductor corpus** mirrored whole (342 files, `diff -r` identical):
   the split pairs, the investigation and post-mortem fixtures, `metrics-split`,
   `metrics-light` and `escapes-agree`. `check.yml` runs the new categories, the
   first-dot slug rule, the lens-record pin, the lint triples again under

@@ -73,11 +73,11 @@ jobs:
         run: |
           python3 scripts/check-edition-text.py selftest
           python3 scripts/check-edition-text.py --edition copilot --root . \
-            --expect-rows 104 \
+            --expect-rows 111 \
             --expect-source-rows 33 \
-            --expect-ids b900176f9b53840d14a3abab8bb2d67c6522a41e2f4f4b55133e412e0996643b \
-            --expect-table-sha256 6471999eadcbc89f18a55133b0bc6472e017437363d62c03e2e94414089861ae \
-            --expect-policy-sha256 41a2eb5e5b4f8aa7eb94d519e0885c801c49af363153a5ef874fc1f2ba7ed973 \
+            --expect-ids dedbf3c9dc57e825d51311148c901b45df63588a0ce1011d48da50365e38643a \
+            --expect-table-sha256 bb82ff23269667613814859557cf4a712ea67854ee70e756d0c044d511b16a18 \
+            --expect-policy-sha256 d84f21f4fade1d144cc82ab4a3bb1645edb22a31a9ca42c2751912a229f06e0f \
             --expect-reader-sha256 76fc6bb130496bb2fc43b4d2eaddf35f75895825cec38d2b28da0e1a9eeb81f7
 
       # Column 4 of the carve map is documentation, and --check-carve never

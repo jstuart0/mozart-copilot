@@ -687,7 +687,9 @@ a rule differently, the table's row names the carved file: the LIGHT tier and
 the stanza-read step sit in `manual/INTAKE.md` and `manual/DELIVER.md`, the
 no-progress rule in `mozart.agent.md` *Orchestration discipline* and each
 specialist's cadence list. The layout half (template files, split state
-files, the lens date) is the next phase of the campaign and is not here yet.
+files, the lens date) landed in phase 3 of the same campaign: the five templates
+are in `manual/`, and `scripts/mozart-lint.sh` defaults `MOZART_LINT_LENS_SINCE`
+to the source's `2026-10-04` (the earlier far-future deviation, D13, is gone).
 
 ## Pending manual verification
 

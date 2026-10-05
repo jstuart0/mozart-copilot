@@ -8,6 +8,26 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Changed — the lens date is on (campaign `2026-10-04-deliver-edition-parity-ports`, phase 3)
+
+- **`scripts/mozart-lint.sh`** now defaults `MOZART_LINT_LENS_SINCE` to
+  `2026-10-04`, the source's own line; the port's earlier deviation (a
+  `9999-12-31` default that kept the rule dormant) is gone because this port's
+  manual now tells the conductor to write the HEAVY surface record and both
+  lens fields. `tests/lint-upstream.diff` is regenerated and records no lens
+  line; `scripts/check-lint-parity.sh` drops its lens alternative, asserts the
+  diff mentions none, and pins the changed-line count at 29.
+- **Upgrade window.** A campaign whose slug is dated 2026-10-04 or later and
+  whose `**Tier**:` line is HEAVY now draws `no usable surface record` unless
+  the line carries `(surface: <word>[, <word>…])` with at least one listed
+  word, and a ticked phase row on such a campaign must record both `ian:` and
+  `xander:`. Campaigns dated earlier gain no finding. A campaign started under
+  an older conductor and dated on or after the date therefore needs its Tier
+  line and rows updated, or the lint run will report it.
+- **Override.** Set `MOZART_LINT_LENS_SINCE=<YYYY-MM-DD>` to move the date
+  (a later date to silence the rule for a transition, an earlier one to audit
+  history); the run then prints `lens-record date overridden: <date>`.
+
 ### Changed — the layout of mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`, ported (campaign `2026-10-04-deliver-edition-parity-ports`, phase 3)
 
 - **Five skeleton files in `.github/mozart/manual/`**: `TEMPLATE-STATE.md`,
@@ -103,7 +123,6 @@ ported here yet.
   first-dot slug rule, the lens-record pin, the lint triples again under
   `LC_ALL=C`, and `metrics-split` and `metrics-light` in its metrics loop, with
   floors for the ledger and conductor siblings.
-- **Deliberate deviation (D13):** the default of `MOZART_LINT_LENS_SINCE` in this port's `mozart-lint.sh` is `9999-12-31`, so the dated HEAVY surface-record rules are dormant until set, because this port's manual does not yet tell its conductor to write one; revisit when the ports plan lands that prose.
 - **`.github/mozart/manual/STATE.md`**: the conductor-record snippet carries the
   `P<N>:heavy` row-required key and the Tier-line rule; the linter paragraph
   names the seventeen categories and the library.

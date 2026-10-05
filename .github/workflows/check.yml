@@ -46,7 +46,7 @@ jobs:
           python3 scripts/check_agents.py --self-test --forms 2>&1 | grep -q 'frontmatter cross-check'
 
       - name: Parse — check_agents.py and apply_models.py compile
-        run: python3 -m py_compile scripts/check_agents.py scripts/apply_models.py
+        run: python3 -m py_compile scripts/check_agents.py scripts/apply_models.py scripts/check-edition-text.py
 
       - name: Parse — shell scripts have valid syntax
         run: bash -n scripts/install-bundle.sh scripts/uninstall.sh scripts/mozart scripts/mozart-lint.sh scripts/mozart-metrics.sh scripts/lib-campaign.sh scripts/check-fingerprints.sh
@@ -62,6 +62,48 @@ jobs:
 
       - name: Manual carve is total (Phase 5 — step 21)
         run: python3 scripts/check_agents.py --check-carve tests/coverage-map.tsv
+
+      # Parity campaign (2026-10-04-deliver-edition-parity-ports, phase 3): the
+      # reader and its table are byte copies of the source edition's. With no
+      # --done every phase is due, so a missing rule fails here. The source
+      # rows cannot run without the source checkout; their count is pinned
+      # instead of ignored. When the table is re-copied, the table hash on the
+      # fourth line below is the only literal that moves.
+      - name: Edition text rows (parity — the table's copilot rows hold)
+        run: |
+          python3 scripts/check-edition-text.py selftest
+          python3 scripts/check-edition-text.py --edition copilot --root . \
+            --expect-rows 104 \
+            --expect-source-rows 33 \
+            --expect-ids b900176f9b53840d14a3abab8bb2d67c6522a41e2f4f4b55133e412e0996643b \
+            --expect-table-sha256 6471999eadcbc89f18a55133b0bc6472e017437363d62c03e2e94414089861ae \
+            --expect-policy-sha256 41a2eb5e5b4f8aa7eb94d519e0885c801c49af363153a5ef874fc1f2ba7ed973 \
+            --expect-reader-sha256 76fc6bb130496bb2fc43b4d2eaddf35f75895825cec38d2b28da0e1a9eeb81f7
+
+      # Column 4 of the carve map is documentation, and --check-carve never
+      # opens a manual file; this is the only check that a label naming a
+      # manual file names one that exists. The floor keeps an emptied column
+      # from passing.
+      - name: Carve-map labels resolve (manual files named in column 4 exist)
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          named, missing = set(), []
+          for line in open("tests/coverage-map.tsv", encoding="utf-8"):
+              cols = line.rstrip("\n").split("\t")
+              if line.startswith("#") or len(cols) < 4:
+                  continue
+              for label in cols[3].split("+"):
+                  m = re.match(r"(manual/[A-Za-z0-9._-]+\.md)", label)
+                  if m:
+                      named.add(m.group(1))
+                      if not os.path.isfile(".github/mozart/" + m.group(1)):
+                          missing.append(m.group(1))
+          if missing or len(named) < 18:
+              print("FAIL: labels naming a missing file:", sorted(set(missing)), "- distinct manual files named:", len(named), "(floor 18)")
+              sys.exit(1)
+          print("ok:", len(named), "distinct manual files named in column 4, all present")
+          PY
 
       - name: Runtime-reads manifest is fresh and resolves in-repo (Phase 5 — step 22; re-added Phase 6 now model-map.jsonc exists)
         run: python3 scripts/check_agents.py --check-doc-refs

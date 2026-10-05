@@ -72,7 +72,7 @@ The literal model IDs stamped per role live in `.github/mozart/config/model-map.
 ## DELIVER pipeline
 
 ```
-1.  Intake          — mozart restates, classifies tier, context, and mode; confirms flow; creates state file + flow sketch;
+1.  Intake          — mozart restates, classifies tier, context, and mode; confirms flow; creates state file (+ ledger and conductor siblings) + flow sketch;
                       cuts the campaign worktree (../<repo>-worktrees/<slug>, branch campaign/<slug>)
 2.  Research        — sarah (+ codebase-pattern-finder, web-search-researcher) in parallel — OPTIONAL, skipped in TINY and LIGHT
 2b. Constraints     — xander or ian, CONDITIONAL — narrow authorization/guarantee trigger only; skipped by default (see trigger table below)
@@ -261,6 +261,7 @@ For responding to a **live outage** — service is down or badly degraded *right
 
 - Plan: `.mozart/plans/<slug>.md`
 - **State file**: `.mozart/plans/<slug>.state.md` (durable pipeline state — survives crashes, sessions, context resets)
+- **Findings ledger** and **conductor record**: `.mozart/plans/<slug>.ledger.md` and `.mozart/plans/<slug>.conductor.md` (beside the state file in campaigns created split; older campaigns keep them as sections of the state file)
 - **Flow sketch**: `.mozart/plans/<slug>.flow.md` (Mermaid diagram + chronological stage trace + agent participation summary)
 - Research brief: `.mozart/research/<slug>.md` (when substantial)
 - Decisions log: `.mozart/plans/<slug>.decisions.md` (from the first judgment call)

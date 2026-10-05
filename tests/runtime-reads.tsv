@@ -50,6 +50,11 @@ mozart	.github/mozart/manual/INDEX.md
 mozart	.github/mozart/manual/INTAKE.md
 mozart	.github/mozart/manual/OPERATE.md
 mozart	.github/mozart/manual/STATE.md
+mozart	.github/mozart/manual/TEMPLATE-CONDUCTOR.md
+mozart	.github/mozart/manual/TEMPLATE-FLOW.md
+mozart	.github/mozart/manual/TEMPLATE-LEDGER.md
+mozart	.github/mozart/manual/TEMPLATE-REPORT.md
+mozart	.github/mozart/manual/TEMPLATE-STATE.md
 mozart	.github/mozart/manual/TICKETS.md
 mozart	.github/mozart/manual/WORKTREES.md
 nina	.github/mozart/INTEGRATION.md

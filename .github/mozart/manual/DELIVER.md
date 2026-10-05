@@ -39,7 +39,7 @@
   - **This applies to `## Pull requests` alone, and the reason is the action class, not the stanza.** `## Ticketing`, `## Documentation surfaces`, `## Code retrieval`, and `## Worktrees` are advisory — the worst a poisoned value does is route work to the wrong place, which is visible, local, and undoable — so they resolve from the working tree as normal. `## Pull requests` authorizes a network write to a shared remote whose object store is permanent. Don't "harmonize" the five, in either direction.
 - **Search for an existing ticket** that may already cover this work (see `.github/mozart/manual/TICKETS.md`, Existing-ticket detection). If a strong candidate is found, surface it to the user and ask whether to use the existing ticket, create new with cross-link, or supersede. Only create a new ticket when no clear match exists or the user explicitly wants a fresh one
 - **Read the `## Pipeline flags` stanza** (optional; `.github/mozart/INTEGRATION.md` section 6) from the working tree. It is advisory and can only add review: `every_phase: true` sets the `EVERY-PHASE` flag (`.github/mozart/manual/FLOWS.md`), recorded in the state file's `Build-time flags`. You never write it.
-- **Create the state file** as `.mozart/plans/active/<slug>.state.md` (per the Directory convention) with Status: in-progress and the initial fields populated, including resolved `ticketing project: <id> (<name>)` and `ticket: <id> (<existing|new>)`. If `.mozart/plans/active/` doesn't exist yet in this repo, create it with `mkdir -p` (one-time per repo).
+- **Create the state file** as `.mozart/plans/active/<slug>.state.md` (per the Directory convention), together with its two siblings `<slug>.ledger.md` and `<slug>.conductor.md`, all three copied from their templates in one step per State file format, with Status: in-progress and the initial fields populated, including resolved `ticketing project: <id> (<name>)` and `ticket: <id> (<existing|new>)`. If `.mozart/plans/active/` doesn't exist yet in this repo, create it with `mkdir -p` (one-time per repo).
 - **Create the flow sketch** as `.mozart/plans/active/<slug>.flow.md` (per the Directory convention) with the metadata table populated, the **Proposed flow** section filled in (rationale + Mermaid diagram of the planned stages and agents — locked from this point forward), an empty *Actual flow* diagram stub, an empty *Deviations from proposed* section, and the first stage trace entry (Intake). See `.github/mozart/manual/STATE.md` (Pipeline flow sketch) for the format. Update *Actual flow*, *Deviations*, and *Stage trace* at every stage transition; never edit *Proposed flow* after intake; finalize at the report stage.
 
 #### Pre-flight gates (run BEFORE accepting an implementation campaign)
@@ -383,8 +383,8 @@ After the final report is written, close the campaign in one sitting. A half-don
    - `Status: complete` (or `aborted`), `Current stage` final, `Last updated` stamped
    - Every stage line `[x]` or `[-] skipped: <rationale>` — no bare `[ ]` left, no duplicate stage lines
    - Iteration counters reflect the actual round counts
-   - **Every commit SHA cited anywhere in the state file is reachable from HEAD** — assert it, don't eyeball it: `git -C <worktree> merge-base --is-ancestor <sha> HEAD` for each. A SHA that fails this is an orphan from a rebase, an amend, or a squashed phase, and it makes the ledger cite a commit nobody can check out (observed twice in a single campaign; prose discipline failed both times)
-   - Paths block lists the ACTUAL artifact paths (no "not yet run" beside a ticked checkbox), and every internal `plans/active/` reference is rewritten to `plans/finished/`
+   - **Every commit SHA cited anywhere in the state file, or in its `.ledger.md` and `.conductor.md` siblings when it has them, is reachable from HEAD** — assert it, don't eyeball it: `git -C <worktree> merge-base --is-ancestor <sha> HEAD` for each. A SHA that fails this is an orphan from a rebase, an amend, or a squashed phase, and it makes the ledger cite a commit nobody can check out (observed twice in a single campaign; prose discipline failed both times)
+   - Paths block lists the ACTUAL artifact paths (no "not yet run" beside a ticked checkbox; the `.ledger.md` and `.conductor.md` declarations name real files), and every internal `plans/active/` reference, in the state file and in those two siblings, is rewritten to `plans/finished/`
    - Worktree line updated with the merge disposition: `merged | squash-merged | pending-pr | intentionally-unmerged | abandoned` (`pending-pr` carries the PR number and is the one value that legitimately changes after closeout — step 5 owns the resolution). Record it explicitly — squash merges make `git branch --merged` / `--is-ancestor` lie, so without this line, worktree cleanup later requires forensics (observed: three completed mobile campaigns holding unmerged code with no record of whether that was intentional)
    - **Attestation ledger is complete**: every subagent dispatched this campaign has an entry (stage, attested model, whether it matched the frontmatter-declared model)
 2. **Finalize the flow sketch** — participation table, skipped-agents rationale, actual-flow mermaid, `Run completed` stamped (see `.github/mozart/manual/STATE.md`, Pipeline flow sketch)
@@ -412,35 +412,4 @@ If any step fails, don't leave the campaign half-closed: undo the moves and surf
 
 **Corruption check after the move**: verify the invariant `Status: complete ⇔ file is in finished/`. The May-2026 multi-repo evaluation found two recurring drifts under the old prefix convention: (a) `Status: complete` state files left in `active/` (or at the legacy `active-` prefix); (b) `finished/` files with `Status: in-progress` bodies (mozart moved prematurely or the campaign never actually completed). After the move, `grep -lE '^\*?\*?Status\*?\*?: complete' .mozart/plans/active/*.state.md 2>/dev/null` should return empty, and `grep -LE '^\*?\*?Status\*?\*?: complete' .mozart/plans/finished/<slug>.state.md` should return empty. If either grep returns a result, the directory or status field disagrees with reality — fix immediately, don't ship the campaign with the discrepancy. When `scripts/mozart-lint.sh` is resolvable, run it against the repo root as the final closeout act — a clean exit (scoped to this slug's findings) is the machine check that the closeout transaction actually completed; prose checklists have twice failed to hold this invariant across evaluation cycles.
 
-Then write the final report:
-
-```
-## <slug>: shipped (tier: <TINY|STANDARD|HEAVY>)
-
-**Disposition**: shipped — <the merge evidence>. "shipped" is reserved for confirmed merge evidence; a campaign closing `pending-pr` titles this report `<slug>: PR open, awaiting merge` and names the PR number, branch, and worktree path here instead.
-**Plan**: <path>
-**Decisions**: <path or "none">
-**Flow sketch**: .mozart/plans/<slug>.flow.md
-**Counterpoint**: <r1-plan path>, <r2-diff path if run>
-**Research**: <path if produced>
-**Investigation** (if applicable): <path>
-**Commits**: <SHAs + one-liners>
-**Phases**: <count>
-**Validation**: SIGNOFF (<reconciliation rounds>) — validation report: <path>
-**Documentation**: <in-repo files updated, wiki URLs published, or "skipped — no user-visible impact">
-
-### What was built
-<one paragraph>
-
-### Agents involved
-<one-line summary referencing the flow sketch — e.g., "harry → bob/librarian → jackson (2 phases, ian mid-build) → valerie → scott. See flow sketch for full trace.">
-
-### Deferred
-<from plan's out-of-scope, or "none">
-
-### Notable findings during the run
-<anything reviewers / specialists / sebastian surfaced that the user should know>
-
-### Open questions / follow-ups
-<unresolved or recommended next work>
-```
+Then write the final report. Its skeleton is a file beside this one, not text in this manual: `TEMPLATE-REPORT.md`. Copy it and fill every `<…>` field. A skeleton holds headers and placeholder rows only; the "Agents involved" section is one line that points at the flow sketch, for example "harry → bob/librarian → jackson (2 phases, ian mid-build) → valerie → scott. See flow sketch for full trace."

@@ -41,3 +41,9 @@ inside it:
 
 Everything under `.github/mozart/` is a runtime read, per the bundle's
 membership contract (`.github/mozart/README.md`). Nothing outside it is.
+
+## On-demand files, not members
+
+`TEMPLATE-STATE.md`, `TEMPLATE-LEDGER.md`, `TEMPLATE-CONDUCTOR.md` and `TEMPLATE-FLOW.md` are skeletons that
+`.github/mozart/manual/STATE.md` tells you to copy at intake; `TEMPLATE-REPORT.md` is the final-report skeleton
+`.github/mozart/manual/DELIVER.md` tells you to copy at closeout. None is a manual member or an agent.

@@ -8,6 +8,49 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Changed — the rules of mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`, ported (campaign `2026-10-04-deliver-edition-parity-ports`, phase 2)
+
+The layout half of that campaign (the five template files, the split state
+files, the lens date) follows in the next phase.
+
+- **LIGHT tier.** `manual/INTAKE.md` *Task tiers (DELIVER)* gains a LIGHT row
+  and the rules around it: security ineligibility (any term in xander's stage-4
+  or stage-8 trigger row, a dependency manifest or lockfile, a HEAVY surface,
+  an otto or nina trigger), "cause known" never taken from ticket text alone,
+  the higher tier when two fit, and escalation (tiers only go up; xander
+  reviews the cumulative diff since the base once). Bob reviews a LIGHT plan
+  alone and flags any trigger term (`bob.agent.md`); the per-phase gate
+  re-checks eligibility against the diff (`manual/DELIVER.md` stage 7d). The
+  tier tables in `.github/mozart/PIPELINE.md`, the sebastian round-2 tier
+  policy and the ticket templates list LIGHT.
+- **Behaviour change: HEAVY is no longer every-phase by default.** ian and
+  xander run on phase 1; from phase 2 each runs when its stage-8 trigger
+  matches or the phase touches the recorded HEAVY surface
+  (`**Tier**: HEAVY (surface: <word>[, <word>…])`). Xander runs on every phase
+  when that surface includes `auth`, `secrets` or `security`; an absent, empty
+  or unlisted word counts as touching the surface on every phase. To keep the
+  old behaviour, say `EVERY-PHASE` in the request or declare `every_phase: true`
+  in a `## Pipeline flags` stanza of `AGENTS.md`
+  (`.github/mozart/INTEGRATION.md` section 6; the stanza can only add review).
+  Both lenses are recorded on each phase's `P<N>` conductor row.
+- **Twelve-term xander row** at stages 4 and 8, in `PIPELINE.md` and in
+  `xander.agent.md`: encryption, sessions, RBAC, security headers, CSP,
+  authorization (ownership and tenant filters) and outbound requests join the
+  earlier terms.
+- **No-progress stop.** Every specialist's cadence list ends with the
+  no-progress bullet (`tests/policy/no-progress.txt`), and the conductor treats
+  a no-progress return as information: continue the live agent once, then fix
+  the brief or escalate; it counts as one failed dispatch and is not an
+  attempt against the per-phase cap of 3.
+- **Traces-to grammar.** The origin campaign's slug goes first; `none`, `n/a`,
+  a ticket id or `external — …` names no campaign; the origin's `## Escapes`
+  block must name the investigation or post-mortem slug, or the linter
+  reports `escape-unrecorded` (dick, scott, the DIAGNOSE and INCIDENT manuals,
+  `PIPELINE.md`, the state-file manual, `.github/mozart/EVAL.md`).
+- **Parity instrument.** `tests/parity/editions.tsv`,
+  `scripts/check-edition-text.py` and the `tests/policy/` files it names are
+  byte copies of the source's. The reader step is not wired into CI yet.
+
 ### Changed — campaign scripts and the conductor-record snippet, from mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`
 
 Only the parts the other editions cannot run without; the persona and manual

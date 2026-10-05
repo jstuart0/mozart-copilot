@@ -39,7 +39,7 @@ Semantics:
 - **`state_md5`**: the md5 of the state file; when `<slug>.ledger.md` or `<slug>.conductor.md` sits beside it, the md5 of the state file, the ledger file and the conductor file concatenated in that order, taking only the files that exist. A single-file campaign hashes exactly as before, so its records stay valid. A reader that predates the sibling files misses a change made only to a sibling; the first run with an updated reader re-examines every split campaign once.
 - **Revisit-by-lens**: an unchanged campaign may be re-examined under a lens no prior record carries. The new record documents that the question has now been asked — this is how deeper understanding of already-seen artifacts stays cheap and deliberate rather than accidental re-reading.
 - **Corrections are new records**, not rewrites. The newest record for a (repo, slug, lens) wins.
-- **Canonical checkouts only.** Worktree replicas of the same repo are excluded; a state file that diverges between checkouts is a finding for the report, not a ledger entry per copy.
+- **Canonical checkouts only.** Worktree replicas of the same repo are excluded; a state file (or sibling ledger or conductor file) that diverges between checkouts is a finding for the report, not a ledger entry per copy.
 
 ## The report (`<eval-home>/<YYYY-MM-DD>-eval.md`)
 
@@ -63,10 +63,11 @@ Trend vs previous run: <deltas, or "baseline — no comparison">
 |---|---|---|---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... | ... | ... | ... |
 
-Source: each campaign's state-file `## Findings ledger` (one row per dispositioned
+Source: each campaign's `## Findings ledger` — in `<slug>.ledger.md` beside the state file, or in the state file itself for a campaign created before the split layout (one row per dispositioned
 finding: stage, lens, severity, `fixed`/`rejected`/`rejected (judgment)`/
 `rejected (user)`/`accepted-risk`) and `## Escapes` block (`Traces-to:` links
 written when a later DIAGNOSE or audit finds a defect the campaign shipped).
+A `Traces-to:` line puts the origin campaign's slug first (`Traces-to: <origin-slug>, <phase/sha>`). Anything else first, such as `none`, `n/a`, a ticket id, or `external — <where or why>; <slug>` for an origin with no state file in this repo, names no campaign. The origin's `## Escapes` block must carry a `Traces-to:` line naming the slug of the investigation or post-mortem (its file name up to the first dot), or `mozart-lint.sh` reports `escape-unrecorded`. Keep a campaign that is named but is not the origin out of the label position: put its slug in prose after a non-slug token.
 
 **`## Degraded controls` is a separate block and is deliberately not counted here.**
 It records checks that ran at reduced strength (e.g. stage 12b with no secret
@@ -87,7 +88,7 @@ What the columns decide:
   runs. A dropping DRE means the gates are decaying — the escaping categories name
   which lens to strengthen.
 - **Catches/campaign by tier** — validates the tiering: TINY should be near zero
-  (that's why it skips gates); STANDARD/HEAVY materially above it.
+  (that's why it skips gates); LIGHT, STANDARD and HEAVY materially above it.
 
 Caveats the report must carry: catch counts are a **lower bound** on pipeline value
 (plan review also prevents defects from being *written*, which no ledger row records),
@@ -102,7 +103,7 @@ Trend vs previous run: <deltas, or "baseline — no comparison">
 |---|---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... | ... |
 
-Source: each campaign's `## Conductor record` and `## Change ledger` sections, and
+Source: each campaign's `## Conductor record` (in `<slug>.conductor.md`, or in the state file of an older campaign) and the state file's `## Change ledger` section, and
 the `## Findings ledger`'s `rejected`/`rejected (judgment)`/`rejected (user)` rows
 (`rejected (user)` is excluded from the wrong-override denominator;
 `rejected (judgment)` counts in it). A high wrong-override rate names lenses whose
@@ -119,7 +120,7 @@ For each verification target the previous report named:
 
 ## Findings
 
-Ranked, evidence-cited (file paths, slugs, metrics). Same severity discipline as everywhere else. Includes the residue the linter can't mechanize: derived claims (absence, count, success, "the specialist is wrong") in Status notes, flow traces, or final reports that never got a conductor row, `rejected (judgment)` notes whose dispute a third source would have settled, and change-ledger manifest cells carrying an unredacted secret-bearing value.
+Ranked, evidence-cited (file paths, slugs, metrics). Same severity discipline as everywhere else. Includes the residue the linter can't mechanize: derived claims (absence, count, success, "the specialist is wrong") in Status notes, flow traces, or final reports with no conductor row; every `rejected (judgment)` note, sampled for a dispute a command could have settled after all (F33); OPERATE/INCIDENT change-ledger manifest cells sampled for unredacted secret-bearing values Check L's shape check can't see (F36); `external — …` origins in `Traces-to` lines (sampled for an origin that did have a state file); HEAVY lens records and the escalation pass row (sampled for a dishonest `xander: run` or `through P<k>`); and Tier lines (sampled for a lowered tier, a surface record that omits a word that applies, or free text after `;` that hides one).
 
 ## Fixes shipped / proposed
 

@@ -68,7 +68,9 @@ this order:
    once that section exists (Phase 2): begin every response with
    `MODEL-ATTESTATION: <provider>/<model-id>` on its own first line.
 10. **`## Communicate as you work`** — copy this section verbatim from an
-    existing specialist. It is the same in every specialist.
+    existing specialist, then end its cadence list with the bullet in
+    `tests/policy/no-progress.txt`, byte for byte (every specialist but
+    mozart).
 11. **`## Field notes (append-only)`** — copy the stub from any existing
     specialist. Append-only; see `.github/mozart/LEARNINGS.md` for the
     protocol.

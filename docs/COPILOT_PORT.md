@@ -677,6 +677,18 @@ cross-check against `README.md` reported alongside it (three lines, exit 0
 — `bob`, `ruby`, `valerie`) so the upstream doc's staleness stays visible
 without failing this port's own CI.
 
+### The rules of `2026-10-03-deliver-eval-efficiency-fixes`, ported (parity campaign `2026-10-04-deliver-edition-parity-ports`, phase 2)
+
+The source edition's rule text now sits in this port in this port's nouns
+(`sebastian r2`, "dispatch", `AGENTS.md`), checked by `tests/parity/editions.tsv`
+and `scripts/check-edition-text.py` (both byte copies of the source's, pinned
+with the policy files under `tests/policy/`). Where this port's carve placed
+a rule differently, the table's row names the carved file: the LIGHT tier and
+the stanza-read step sit in `manual/INTAKE.md` and `manual/DELIVER.md`, the
+no-progress rule in `mozart.agent.md` *Orchestration discipline* and each
+specialist's cadence list. The layout half (template files, split state
+files, the lens date) is the next phase of the campaign and is not here yet.
+
 ## Pending manual verification
 
 Every item below requires a human with Copilot access; none can be

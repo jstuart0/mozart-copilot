@@ -126,8 +126,10 @@ the map said it should have.
 ## Tier policy (verbatim from the Claude Code edition)
 
 - **TINY**: skip.
+- **LIGHT**: run.
 - **STANDARD**: default-run — skip only on sub-50-LOC mechanical diffs where
-  the plan was trivial and internal reviewers were clean.
+  the plan was trivial and internal reviewers were clean; the skip is not available
+  when any term in xander's stage-8 trigger row applies.
 - **HEAVY**: **non-negotiable** — not "mandatory" with a soft override.
   Skipping this stage on HEAVY is a self-detected gate failure that requires
   escalation, never a runtime mozart decision. "Mid-build covered it,"

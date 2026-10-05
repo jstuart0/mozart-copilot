@@ -8,10 +8,36 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Changed — the layout of mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`, ported (campaign `2026-10-04-deliver-edition-parity-ports`, phase 3)
+
+- **Five skeleton files in `.github/mozart/manual/`**: `TEMPLATE-STATE.md`,
+  `TEMPLATE-LEDGER.md`, `TEMPLATE-CONDUCTOR.md`, `TEMPLATE-FLOW.md` and
+  `TEMPLATE-REPORT.md`. They start from the source's files; this port's
+  differences are the reviewer labels (`Counterpoint r1 (plan)`,
+  `**Counterpoint**:`, `sebastian surfaced`) and the `## Attestation ledger`
+  section in the state skeleton. The inline skeleton blocks are removed from
+  `manual/STATE.md` and `manual/DELIVER.md` and replaced by the source's
+  pointer sentences: copy the file, don't retype it. They are on-demand files,
+  not manual members (`manual/INDEX.md`, *On-demand files, not members*); the
+  conductor body cites their five paths, so `tests/runtime-reads.tsv` gains
+  five `mozart` rows.
+- **Split state layout.** A new campaign's findings ledger and conductor record
+  live beside the state file as `<slug>.ledger.md` and `<slug>.conductor.md`;
+  the stage list, change ledger, escapes, degraded controls, timeline and notes
+  stay in the state file. `manual/STATE.md`, `manual/DELIVER.md` (intake and
+  closeout), `.github/mozart/PIPELINE.md` and `manual/WORKTREES.md` say where
+  each lives, that a sibling wins when a section is in both places, and that an
+  old single-file campaign is never split on resume.
+- **`tests/coverage-map.tsv`**: column 4 (documentation only) names the
+  template files on the three rows whose text moved; the carve pin is
+  unmoved. A new CI step checks that every manual file column 4 names exists.
+- **CI**: a step runs `scripts/check-edition-text.py` with the table's pinned
+  literals (the reader is also in the `py_compile` list), and the carve-label
+  step above; 69 steps.
+
 ### Changed — the rules of mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`, ported (campaign `2026-10-04-deliver-edition-parity-ports`, phase 2)
 
-The layout half of that campaign (the five template files, the split state
-files, the lens date) follows in the next phase.
+The layout half of that campaign is the next entry.
 
 - **LIGHT tier.** `manual/INTAKE.md` *Task tiers (DELIVER)* gains a LIGHT row
   and the rules around it: security ineligibility (any term in xander's stage-4

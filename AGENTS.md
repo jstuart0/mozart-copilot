@@ -88,11 +88,9 @@ bash scripts/check-lint-parity.sh /path/to/mozart-orchestration
 `scripts/mozart-lint.sh` must equal the source's modulo the allowlisted
 reviewer-label diff committed at `tests/lint-upstream.diff`, and
 `scripts/mozart-metrics.sh` and `scripts/lib-campaign.sh` must be byte-identical to
-it. The lint diff also carries one deliberate, non-label deviation (D13): the
-default of `MOZART_LINT_LENS_SINCE` is `9999-12-31` here, so the dated
-lens-record rules stay dormant until this port's manual tells its conductor to
-write a HEAVY surface record (the ports plan); the corpus pins the date to
-exercise the rule, and the allowlist admits exactly that line. The script also
+it. The lint diff carries no lens-date deviation: the default of
+`MOZART_LINT_LENS_SINCE` is the source's own, `2026-10-04`, and the corpus
+pins a later date to exercise the rule. The script also
 guards against a vacuous pass (an empty or truncated allowlist file) with a
 changed-line floor and a named member. It narrows the manual review of that
 diff; it does not replace it.

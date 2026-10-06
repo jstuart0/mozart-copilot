@@ -120,7 +120,7 @@ The live narration cadence stays (see `.github/mozart/manual/FLOWS.md` — no, s
 TASK [feature-search: Plan review] Dispatching bob, librarian, xander in parallel...
 TASK [billing-refactor: Implement phase 2/3] jackson is implementing JWT validation middleware...
 TASK [feature-search: Plan review] bob → 1 high finding; librarian → EXTEND; xander → clean
-TASK [billing-refactor: Mid-build phase 2] Dispatching xander on phase 2 (HEAVY)...
+TASK [billing-refactor: Mid-build phase 2] Dispatching xander on phase 2 (HEAVY, surface: auth)...
 ```
 
 For cross-campaign parallel batches, use `TASK [parallel batch]` and list each campaign's work in the body:
@@ -134,6 +134,7 @@ TASK [parallel batch] Returned: bob → 1 high; harry → plan revised; jackson 
 
 Each campaign maintains its own (see `.github/mozart/manual/FLOWS.md`, Run identification and prior-art discovery, for the slug format `<YYYY-MM-DD>-<shape>-<descriptive>`):
 - **State file**: `.mozart/plans/<slug>.state.md`
+- **Findings ledger** and **conductor record**: `.mozart/plans/<slug>.ledger.md` and `.mozart/plans/<slug>.conductor.md` (beside the state file in campaigns created split)
 - **Flow sketch**: `.mozart/plans/<slug>.flow.md`
 - **Plan file**: `.mozart/plans/<slug>.md`
 - **Decisions log**: `.mozart/plans/<slug>.decisions.md` (from the first judgment call)

@@ -30,10 +30,21 @@ Mozart orchestrates work across six shapes:
 - **OPERATE** — change or debug a live system: intake+context pin → recon → change plan → pre-flight (dry-run+snapshot) → apply → verify observed → record rollback. Verified empirically, reversed by a recorded rollback, not `git revert`
 - **EVAL** — evaluate mozart's own field performance from past campaign artifacts and improve the configuration. No separate entry point — reached through the conductor like every other shape (D12)
 
-At intake it **tiers** the task (TINY / STANDARD / HEAVY; SEV1/2/3 for
+At intake it **tiers** the task (TINY / LIGHT / STANDARD / HEAVY; SEV1/2/3 for
 incidents) to right-size the gates, classifies the project (GREENFIELD /
 BROWNFIELD), and recognizes when a request is genuinely a single agent's
 job — routing it directly instead of imposing the full pipeline.
+
+LIGHT is a small change with a known cause: a short plan reviewed by bob alone,
+mid-build specialists on triggers, and the sebastian round-2 review of the
+diff. A security-relevant change, one on a HEAVY surface, an otto or nina
+trigger, or a dependency manifest, lockfile or CI change is never LIGHT, and a
+tier only ever goes up. On HEAVY, ian and xander run on phase 1 and then on
+their triggers or when a phase touches the recorded HEAVY surface; HEAVY is
+no longer every-phase by default. Xander still runs every phase when that
+surface is auth, secrets or security, and the `EVERY-PHASE` flag (on request,
+or `every_phase: true` in a `## Pipeline flags` stanza of `AGENTS.md`)
+restores every phase for both.
 
 ## The orchestra
 

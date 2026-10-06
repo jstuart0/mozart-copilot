@@ -8,6 +8,95 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Changed — the lens date is on (campaign `2026-10-04-deliver-edition-parity-ports`, phase 3)
+
+- **`scripts/mozart-lint.sh`** now defaults `MOZART_LINT_LENS_SINCE` to
+  `2026-10-04`, the source's own line; the port's earlier deviation (a
+  `9999-12-31` default that kept the rule dormant) is gone because this port's
+  manual now tells the conductor to write the HEAVY surface record and both
+  lens fields. `tests/lint-upstream.diff` is regenerated and records no lens
+  line; `scripts/check-lint-parity.sh` drops its lens alternative, asserts the
+  diff mentions none, and pins the changed-line count at 29.
+- **Upgrade window.** A campaign whose slug is dated 2026-10-04 or later and
+  whose `**Tier**:` line is HEAVY now draws `no usable surface record` unless
+  the line carries `(surface: <word>[, <word>…])` with at least one listed
+  word, and a ticked phase row on such a campaign must record both `ian:` and
+  `xander:`. Campaigns dated earlier gain no finding. A campaign started under
+  an older conductor and dated on or after the date therefore needs its Tier
+  line and rows updated, or the lint run will report it.
+- **Override.** Set `MOZART_LINT_LENS_SINCE=<YYYY-MM-DD>` to move the date
+  (a later date to silence the rule for a transition, an earlier one to audit
+  history); the run then prints `lens-record date overridden: <date>`.
+
+### Changed — the layout of mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`, ported (campaign `2026-10-04-deliver-edition-parity-ports`, phase 3)
+
+- **Five skeleton files in `.github/mozart/manual/`**: `TEMPLATE-STATE.md`,
+  `TEMPLATE-LEDGER.md`, `TEMPLATE-CONDUCTOR.md`, `TEMPLATE-FLOW.md` and
+  `TEMPLATE-REPORT.md`. They start from the source's files; this port's
+  differences are the reviewer labels (`Counterpoint r1 (plan)`,
+  `**Counterpoint**:`, `sebastian surfaced`) and the `## Attestation ledger`
+  section in the state skeleton. The inline skeleton blocks are removed from
+  `manual/STATE.md` and `manual/DELIVER.md` and replaced by the source's
+  pointer sentences: copy the file, don't retype it. They are on-demand files,
+  not manual members (`manual/INDEX.md`, *On-demand files, not members*); the
+  conductor body cites their five paths, so `tests/runtime-reads.tsv` gains
+  five `mozart` rows.
+- **Split state layout.** A new campaign's findings ledger and conductor record
+  live beside the state file as `<slug>.ledger.md` and `<slug>.conductor.md`;
+  the stage list, change ledger, escapes, degraded controls, timeline and notes
+  stay in the state file. `manual/STATE.md`, `manual/DELIVER.md` (intake and
+  closeout), `.github/mozart/PIPELINE.md` and `manual/WORKTREES.md` say where
+  each lives, that a sibling wins when a section is in both places, and that an
+  old single-file campaign is never split on resume.
+- **`tests/coverage-map.tsv`**: column 4 (documentation only) names the
+  template files on the three rows whose text moved; the carve pin is
+  unmoved. A new CI step checks that every manual file column 4 names exists.
+- **CI**: a step runs `scripts/check-edition-text.py` with the table's pinned
+  literals (the reader is also in the `py_compile` list), and the carve-label
+  step above; 69 steps.
+
+### Changed — the rules of mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`, ported (campaign `2026-10-04-deliver-edition-parity-ports`, phase 2)
+
+The layout half of that campaign is the next entry.
+
+- **LIGHT tier.** `manual/INTAKE.md` *Task tiers (DELIVER)* gains a LIGHT row
+  and the rules around it: security ineligibility (any term in xander's stage-4
+  or stage-8 trigger row, a dependency manifest or lockfile, a HEAVY surface,
+  an otto or nina trigger), "cause known" never taken from ticket text alone,
+  the higher tier when two fit, and escalation (tiers only go up; xander
+  reviews the cumulative diff since the base once). Bob reviews a LIGHT plan
+  alone and flags any trigger term (`bob.agent.md`); the per-phase gate
+  re-checks eligibility against the diff (`manual/DELIVER.md` stage 7d). The
+  tier tables in `.github/mozart/PIPELINE.md`, the sebastian round-2 tier
+  policy and the ticket templates list LIGHT.
+- **Behaviour change: HEAVY is no longer every-phase by default.** ian and
+  xander run on phase 1; from phase 2 each runs when its stage-8 trigger
+  matches or the phase touches the recorded HEAVY surface
+  (`**Tier**: HEAVY (surface: <word>[, <word>…])`). Xander runs on every phase
+  when that surface includes `auth`, `secrets` or `security`; an absent, empty
+  or unlisted word counts as touching the surface on every phase. To keep the
+  old behaviour, say `EVERY-PHASE` in the request or declare `every_phase: true`
+  in a `## Pipeline flags` stanza of `AGENTS.md`
+  (`.github/mozart/INTEGRATION.md` section 6; the stanza can only add review).
+  Both lenses are recorded on each phase's `P<N>` conductor row.
+- **Twelve-term xander row** at stages 4 and 8, in `PIPELINE.md` and in
+  `xander.agent.md`: encryption, sessions, RBAC, security headers, CSP,
+  authorization (ownership and tenant filters) and outbound requests join the
+  earlier terms.
+- **No-progress stop.** Every specialist's cadence list ends with the
+  no-progress bullet (`tests/policy/no-progress.txt`), and the conductor treats
+  a no-progress return as information: continue the live agent once, then fix
+  the brief or escalate; it counts as one failed dispatch and is not an
+  attempt against the per-phase cap of 3.
+- **Traces-to grammar.** The origin campaign's slug goes first; `none`, `n/a`,
+  a ticket id or `external — …` names no campaign; the origin's `## Escapes`
+  block must name the investigation or post-mortem slug, or the linter
+  reports `escape-unrecorded` (dick, scott, the DIAGNOSE and INCIDENT manuals,
+  `PIPELINE.md`, the state-file manual, `.github/mozart/EVAL.md`).
+- **Parity instrument.** `tests/parity/editions.tsv`,
+  `scripts/check-edition-text.py` and the `tests/policy/` files it names are
+  byte copies of the source's. The reader step is not wired into CI yet.
+
 ### Changed — campaign scripts and the conductor-record snippet, from mozart-orchestration's `2026-10-03-deliver-eval-efficiency-fixes`
 
 Only the parts the other editions cannot run without; the persona and manual
@@ -34,7 +123,6 @@ ported here yet.
   first-dot slug rule, the lens-record pin, the lint triples again under
   `LC_ALL=C`, and `metrics-split` and `metrics-light` in its metrics loop, with
   floors for the ledger and conductor siblings.
-- **Deliberate deviation (D13):** the default of `MOZART_LINT_LENS_SINCE` in this port's `mozart-lint.sh` is `9999-12-31`, so the dated HEAVY surface-record rules are dormant until set, because this port's manual does not yet tell its conductor to write one; revisit when the ports plan lands that prose.
 - **`.github/mozart/manual/STATE.md`**: the conductor-record snippet carries the
   `P<N>:heavy` row-required key and the Tier-line rule; the linter paragraph
   names the seventeen categories and the library.

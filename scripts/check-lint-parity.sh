@@ -42,7 +42,7 @@ fi
 # than matching case-insensitively: -i would also admit any casing of
 # "claude"/"counterpoint" anywhere on a line, widening the allowlist past the
 # specific strings this rename actually produces.
-ALLOW_RE='REVIEW_LABEL_RE|review-drift|external-review|Counterpoint|Codex|Claude|codex-drift|codex r[12]|round [12]|LENS_SINCE=.*:-(2026-10-04|9999-12-31)|PIPELINE\.md|^[<>] *#( |$)|^[<>] *$'
+ALLOW_RE='REVIEW_LABEL_RE|review-drift|external-review|Counterpoint|Codex|Claude|codex-drift|codex r[12]|round [12]|PIPELINE\.md|^[<>] *#( |$)|^[<>] *$'
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -62,13 +62,15 @@ fi
 # 2. Population floor + named member (M7). An empty or truncated allowlist file
 #    would make step 3 pass while proving nothing about the label port.
 changed=$(grep -cE '^[<>]' tests/lint-upstream.diff || true)
-if [ "$changed" -lt 8 ]; then
-  echo "FAIL: allowlist changed-line population $changed < 8 — the file is" >&2
-  echo "      empty or truncated; step 3 below would pass vacuously" >&2
+if [ "$changed" -ne 29 ]; then
+  echo "FAIL: allowlist changed-line population $changed != 29 — the file is" >&2
+  echo "      empty, truncated or stale; step 3 below would pass vacuously" >&2
   rc=1
 fi
-if ! grep -qF 'MOZART_LINT_LENS_SINCE:-9999-12-31' tests/lint-upstream.diff; then
-  echo "FAIL: named member absent from the allowlist: the D13 lens-date default" >&2
+# The lens-record default is the source's own line now, so the diff carries
+# no mention of it at all (the D13 deviation ended with the lens commit).
+if grep -qF 'LENS_SINCE' tests/lint-upstream.diff; then
+  echo "FAIL: tests/lint-upstream.diff still records a lens-date deviation" >&2
   rc=1
 fi
 if ! grep -qF 'REVIEW_LABEL_RE=' tests/lint-upstream.diff; then

@@ -67,8 +67,9 @@ jobs:
       # reader and its table are byte copies of the source edition's. With no
       # --done every phase is due, so a missing rule fails here. The source
       # rows cannot run without the source checkout; their count is pinned
-      # instead of ignored. When the table is re-copied, the table hash on the
-      # fourth line below is the only literal that moves.
+      # instead of ignored. After a re-copy, run the source's
+      # `python3 scripts/check-edition-text.py hashes --edition copilot` and
+      # replace all six literals.
       - name: Edition text rows (parity — the table's copilot rows hold)
         run: |
           python3 scripts/check-edition-text.py selftest

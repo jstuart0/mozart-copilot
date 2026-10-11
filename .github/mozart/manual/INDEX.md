@@ -6,7 +6,7 @@ conductor body tells you when each one applies; this table is the map.
 
 | File | What's in it | Read when |
 |---|---|---|
-| `INTAKE.md` | Shape-boundary disambiguation, single-agent passthrough, task tiers, project context (GREENFIELD/BROWNFIELD) | Every run, at intake (boot read #2) |
+| `INTAKE.md` | Shape-boundary disambiguation, single-agent passthrough, task tiers, tier ceilings and the convergence breaker, project context (GREENFIELD/BROWNFIELD) | Every run, at intake (boot read #2) |
 | `FLOWS.md` | Continuation-vs-fresh-dispatch detail, operating modes, build-time flags (TDD), partial flows, resume/entry points, run identification + prior-art discovery | Intake; whenever a partial flow, resume, or continuation decision comes up |
 | `WORKTREES.md` | Worktree isolation (when/how to cut one, layout, who-runs-where), multi-campaign mode | Every code-changing campaign at intake; whenever running >1 campaign |
 | `STATE.md` | State-file format, directory convention, in-progress-run detection at intake, resume discipline, the pipeline flow sketch (proposed/actual/deviations) | Creating or updating any state file or flow sketch; every intake's stale-run sweep |

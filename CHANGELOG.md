@@ -8,6 +8,45 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Added — a CRITICAL tier and a ceiling for every tier (campaign `2026-10-11-deliver-critical-tier-ports`, copilot port)
+
+- **Five tiers.** DELIVER and OPERATE gain **CRITICAL**, chosen by recovery
+  cost: HEAVY work whose revert and redeploy do not restore the prior state
+  cheaply (an irreversible migration or backfill, money movement, auth for many
+  users, shared infrastructure, customer or business-production data). It
+  inherits every rule that names HEAVY and adds a rehearsal on a restored copy
+  of the real data, one rollback drill, the probe again before each
+  irreversible step and a written go/no-go checklist. Only the user lowers a
+  tier, between HEAVY and CRITICAL.
+- **Ceilings** (`.github/mozart/manual/INTAKE.md`, *Tier ceilings and the
+  real-environment probe*): full review rounds per tier (none, 1, 1, 1, 2),
+  every later round a delta check, a plan-to-go budget per tier, the
+  convergence breaker, and a stop message that leads with one recommendation.
+  The 30,000-character cap on `mozart.agent.md` holds: the conductor carries a
+  short pointer and the full text lives in the manual, leaving about 186
+  characters of headroom, so a later port into that file must carve before it
+  adds.
+- **The probe and the restore proof.** The probe is read-only and uses only the
+  access the user's instruction names. The restore proof is an execution step
+  that runs only on the user's explicit go, under one guardrail paragraph
+  (named source and scratch target, refusal on alias or sharing, a new object
+  only, a private and expiring scratch target that is torn down and recorded,
+  nothing copied off the environment). hank's snapshot step points at it.
+- **Disclosure.** On the user's go, the restore proof creates a temporary
+  scratch copy inside the user's own environment, never elsewhere, and deletes
+  it. This port ships no PRIVACY.md; the README says so beside the tier text.
+- **`heavy_is_critical`** (`.github/mozart/INTEGRATION.md` section 6) is a
+  raise-only stanza key and never authorizes a restore, a credential use or any
+  production action.
+- **Lint and library.** `scripts/lib-campaign.sh` is byte-identical to the
+  source again; `scripts/mozart-lint.sh` is the source's with the same 29
+  changed lines (`tests/lint-upstream.diff` regenerated) and reads CRITICAL as
+  HEAVY-class. The fixture mirror gains the six CRITICAL fixtures and the four
+  new expected lines.
+- **Red window.** The edition-text step in CI and the held template diffs stay
+  red until the closeout phase re-copies the source's table and policy files
+  and moves the four call-site literals.
+
 ### Changed — the lens date is on (campaign `2026-10-04-deliver-edition-parity-ports`, phase 3)
 
 - **`scripts/mozart-lint.sh`** now defaults `MOZART_LINT_LENS_SINCE` to

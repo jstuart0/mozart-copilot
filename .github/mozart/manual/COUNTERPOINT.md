@@ -137,6 +137,7 @@ the map said it should have.
   reasons. Either the review runs, or the campaign stops at `Status:
   stopped` with a state-file note explaining the blocker and resumes in a
   fresh session.
+- **CRITICAL**: as HEAVY.
 
 ## Iteration (round 1 only — see the DELIVER pipeline's stage 6)
 

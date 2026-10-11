@@ -30,7 +30,7 @@ Mozart orchestrates work across six shapes:
 - **OPERATE** — change or debug a live system: intake+context pin → recon → change plan → pre-flight (dry-run+snapshot) → apply → verify observed → record rollback. Verified empirically, reversed by a recorded rollback, not `git revert`
 - **EVAL** — evaluate mozart's own field performance from past campaign artifacts and improve the configuration. No separate entry point — reached through the conductor like every other shape (D12)
 
-At intake it **tiers** the task (TINY / LIGHT / STANDARD / HEAVY; SEV1/2/3 for
+At intake it **tiers** the task (TINY / LIGHT / STANDARD / HEAVY / CRITICAL; SEV1/2/3 for
 incidents) to right-size the gates, classifies the project (GREENFIELD /
 BROWNFIELD), and recognizes when a request is genuinely a single agent's
 job — routing it directly instead of imposing the full pipeline.
@@ -44,7 +44,19 @@ their triggers or when a phase touches the recorded HEAVY surface; HEAVY is
 no longer every-phase by default. Xander still runs every phase when that
 surface is auth, secrets or security, and the `EVERY-PHASE` flag (on request,
 or `every_phase: true` in a `## Pipeline flags` stanza of `AGENTS.md`)
-restores every phase for both.
+restores every phase for both. CRITICAL is HEAVY work whose revert and redeploy
+do not restore the prior state cheaply (an irreversible migration, money
+movement, auth for many users, shared infrastructure, customer data): it adds
+a rehearsal on a restored copy of production data, one rollback drill, the
+real-environment probe, and a written go/no-go checklist, and the step waits
+for your go. Every tier also has a ceiling: one full plan-review round (two on
+CRITICAL), then delta checks, and a planning budget; mozart stops with a
+re-scope recommendation when a plan grows by more than half in a round or its
+Critical count stops falling. `heavy_is_critical: true` in the same stanza
+raises HEAVY-surface work to CRITICAL and never lowers a tier; only you can,
+between HEAVY and CRITICAL. On your go, the
+restore proof creates a temporary scratch copy inside your own environment,
+never elsewhere, and deletes it.
 
 ## The orchestra
 

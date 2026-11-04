@@ -8,6 +8,27 @@ once it reaches `1.0.0`. Before that, `0.x` releases may include breaking change
 
 ## [Unreleased]
 
+### Added — a default bar for findings and tests, and `rigor: precise` (campaign `2026-11-04-deliver-rigor-default-bar`, copilot port)
+
+- **The default bar.** Findings state their trigger and consequence. Critical
+  or High needs a realistic trigger for the product's exposure; a rare
+  coincidence caps at Medium. Irreversible loss of data or money, and an
+  exposed security surface, keep their severity, and so do severities a rule
+  fixes for a named failure. The default test scope is each contract behavior,
+  the golden path once, one real path per integration seam and a regression
+  test per fixed bug.
+- **`accepted-risk (default bar)`.** A cheap Medium in code already being
+  touched is fixed; every other Medium and every Low is recorded as a ledger
+  row with this value. It never applies to an xander or nina finding on an
+  exposed surface.
+- **`rigor: precise`.** The `PRECISE` flag restores the earlier bar. Set it at
+  intake ("be as precise as possible"), with `rigor: precise` in the
+  `## Pipeline flags` stanza (`INTEGRATION.md`), or by a CRITICAL tier. It is
+  raise-only. The conductor prepends `rigor: precise` to each brief and to each
+  sebastian dispatch.
+- No gate, stage, cap or reviewer was removed. The 30,000-character cap on
+  `mozart.agent.md` holds.
+
 ### Added — a CRITICAL tier and a ceiling for every tier (campaign `2026-10-11-deliver-critical-tier-ports`, copilot port)
 
 - **Five tiers.** DELIVER and OPERATE gain **CRITICAL**, chosen by recovery

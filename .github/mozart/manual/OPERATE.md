@@ -58,6 +58,7 @@ Where no CRITICAL category applies, the restore proof decides: hank runs it in t
 ### 4. Pre-flight gate (hank + xander/sebastian on HEAVY)
 - **hank** runs every dry-run in the plan and takes every snapshot, recording snapshot paths and rollback commands into the state file's **Change ledger — before applying anything.** A failed dry-run, an unexpected diff, an immutable-field `Forbidden`, or a snapshot that can't be taken is a **hard stop** back to otto/the user — not a warning to push through
 - **HEAVY**: **xander** reviews the security surface of the change (RBAC and cloud IAM grants, federation trust, secret exposure, network policy, new public surface); **otto** confirms the server-side dry-run is clean against the *actual live resources*; **nina** reviews its cloud assertions on a cloud surface; **sebastian** reviews the change plan (commands + rollback + ordering) — same cross-family invariant assert as the DELIVER pipeline's stages 5/9. Any BLOCK stops the apply
+- **CRITICAL**: the same reviewers, and each brief and sebastian's brief open with `rigor: precise`, since CRITICAL implies the `PRECISE` flag (`.github/mozart/manual/FLOWS.md`).
 - The gate's output is a go/no-go. No apply happens until the snapshots exist and the dry-runs are clean
 
 ### 5. Apply (hank)

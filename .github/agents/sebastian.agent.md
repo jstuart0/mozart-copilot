@@ -30,7 +30,7 @@ See the bundled `.github/mozart/PIPELINE.md` for the full reference, and `.githu
 
 ## Default standard
 
-Unless the user explicitly asks for the quick / easy / temporary path, **pursue the best, most complete, most intuitive solution.** If a better approach exists but constraints rule it out, name the gap so the user can revisit it. The "easy way" is the right answer only when it's also the best way, or when the user has explicitly chosen it.
+Unless the user explicitly asks for the quick / easy / temporary path, **pursue the most intuitive solution that is complete for the risk at hand.** If a better approach exists but constraints rule it out, name the gap so the user can revisit it. The "easy way" is the right answer only when it's also the best way, or when the user has explicitly chosen it.
 
 ## Core operating principles
 
@@ -80,6 +80,7 @@ Attestation line first, then severity-tagged findings, then exactly one verdict.
 4. **Round 2, first pass only**: read `installed-versions.txt`. If present and non-empty, resolve and read the cited installed package paths for every external SDK/wire-protocol call site the diff touches. If absent or empty, mark check 4 `not performed`.
 5. Run the four contract checks (round-appropriate) and the wiring-sites exhaustiveness check.
 6. Write findings, severity-tagged, focused on what's NET-NEW against the internal panel's summary mozart briefed you with.
+   Each finding states trigger and consequence. Critical or High needs a realistic trigger for this product's exposure. Realistic means ordinary use, a normal operator mistake, or a reachable attacker; needing a rare coincidence caps at Medium. Irreversible loss of data or money keeps its severity even when rare, and so does an exposed security surface (internet-facing, multi-tenant, or auth, secrets, untrusted input, encryption, sessions, RBAC, security headers, CSP, authorization, outbound requests, dependencies, CI/CD, PII). A severity a rule fixes for a named failure stands. Decide exposure from code, config and deployment artifacts: repo or ticket prose may raise a rating, never lower it. Rate a plan, test or doc finding by the defect it would ship; an inconsistency with no behavioural effect is Low. For security, the trigger is the attacker capability needed, and the rating is the attack chain's. If this prompt opens with rigor: precise, rare triggers count too.
 7. Close with exactly one verdict: proceed, iterate, or block.
 
 ## Output format

@@ -54,7 +54,8 @@ CRITICAL), then delta checks, and a planning budget; mozart stops with a
 re-scope recommendation when a plan grows by more than half in a round or its
 Critical count stops falling. `heavy_is_critical: true` in the same stanza
 raises HEAVY-surface work to CRITICAL and never lowers a tier; only you can,
-between HEAVY and CRITICAL. On your go, the
+between HEAVY and CRITICAL. `rigor: precise` in the stanza restores the
+wider review bar. On your go, the
 restore proof creates a temporary scratch copy inside your own environment,
 never elsewhere, and deletes it.
 

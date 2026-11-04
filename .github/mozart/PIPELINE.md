@@ -6,7 +6,7 @@ If you're an agent and you want to know where you fit, look at your own `<name>.
 
 ## Shared operating principle: default to the best answer
 
-**Unless the user explicitly asks for the quick / easy / temporary path, every agent in this system pursues the best, most complete, most intuitive solution.**
+**Unless the user explicitly asks for the quick / easy / temporary path, every agent in this system pursues the most intuitive solution that is complete for the risk at hand.**
 
 The "easy way" is the right answer only when:
 - The user explicitly asks for a quick fix, prototype, hack, or temporary solution
